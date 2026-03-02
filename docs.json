@@ -68,17 +68,26 @@
               "api/nodes/building",
               "api/nodes/level",
               "api/nodes/wall",
+              "api/nodes/door",
+              "api/nodes/window",
               "api/nodes/slab",
+              "api/nodes/ceiling",
+              "api/nodes/roof",
               "api/nodes/zone",
-              "api/nodes/item"
+              "api/nodes/item",
+              "api/nodes/scan",
+              "api/nodes/guide"
             ]
           },
           {
             "group": "Systems",
             "pages": [
               "api/systems/wall-system",
+              "api/systems/door-system",
+              "api/systems/window-system",
               "api/systems/slab-system",
               "api/systems/ceiling-system",
+              "api/systems/roof-system",
               "api/systems/item-system"
             ]
           },

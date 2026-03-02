@@ -1,0 +1,531 @@
+---
+title: "DoorNode"
+description: "Node representing a parametric door with configurable frame, segments, and hardware"
+---
+
+## Overview
+
+The `DoorNode` represents a highly configurable parametric door that can be placed on walls. It supports various door configurations including panel designs, glass segments, swing directions, and commercial hardware.
+
+**Key features**:
+- Wall-mounted placement with configurable side
+- Segmented door leaf with panel, glass, or empty segments
+- Configurable frame, threshold, and handle
+- Swing direction and hinge side control
+- Commercial hardware support (door closer, panic bar)
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const DoorSegment = z.object({
+  type: z.enum(['panel', 'glass', 'empty']),
+  heightRatio: z.number(),
+  columnRatios: z.array(z.number()).default([1]),
+  dividerThickness: z.number().default(0.03),
+  panelDepth: z.number().default(0.01),
+  panelInset: z.number().default(0.04),
+})
+
+const DoorNode = BaseNode.extend({
+  id: objectId('door'),
+  type: nodeType('door'),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  side: z.enum(['front', 'back']).optional(),
+  wallId: z.string().optional(),
+  width: z.number().default(0.9),
+  height: z.number().default(2.1),
+  frameThickness: z.number().default(0.05),
+  frameDepth: z.number().default(0.07),
+  threshold: z.boolean().default(true),
+  thresholdHeight: z.number().default(0.02),
+  hingesSide: z.enum(['left', 'right']).default('left'),
+  swingDirection: z.enum(['inward', 'outward']).default('inward'),
+  segments: z.array(DoorSegment).default([...]),
+  handle: z.boolean().default(true),
+  handleHeight: z.number().default(1.05),
+  handleSide: z.enum(['left', 'right']).default('right'),
+  contentPadding: z.tuple([z.number(), z.number()]).default([0.04, 0.04]),
+  doorCloser: z.boolean().default(false),
+  panicBar: z.boolean().default(false),
+  panicBarHeight: z.number().default(1.0),
+})
+
+type DoorNode = z.infer<typeof DoorNode>
+type DoorSegment = z.infer<typeof DoorSegment>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/door.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique door identifier.
+  
+  **Format**: `door_{randomString}`
+  
+  **Example**: `"door_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"door"`.
+  
+  **Default**: `"door"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the door.
+  
+  **Example**: `"Front Door"`, `"Bedroom Door"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent level's ID.
+  
+  **Example**: `"level_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls door visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the door.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the door.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Door-Specific Fields
+
+<ParamField path="position" type="[number, number, number]" required>
+  Center position of the door in wall-local coordinate system.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[2.5, 1.05, 0]` (2.5m along wall, 1.05m height center)
+  
+  Y coordinate represents the vertical center of the door (height/2, always at floor level).
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Rotation of the door in radians.
+  
+  **Format**: `[rx, ry, rz]` in radians
+  
+  **Default**: `[0, 0, 0]`
+</ParamField>
+
+<ParamField path="side" type="'front' | 'back'">
+  Which side of the wall the door is placed on.
+  
+  **Values**:
+  - `"front"` - Front side of the wall
+  - `"back"` - Back side of the wall
+</ParamField>
+
+<ParamField path="wallId" type="string">
+  Reference to the wall node ID this door is attached to.
+  
+  **Example**: `"wall_abc123"`
+</ParamField>
+
+<ParamField path="width" type="number" required>
+  Overall width of the door in meters.
+  
+  **Default**: `0.9`
+  
+  **Example**: `0.9` (standard 90cm door), `1.2` (wide door)
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Overall height of the door in meters.
+  
+  **Default**: `2.1`
+  
+  **Example**: `2.1` (standard door height), `2.4` (tall door)
+</ParamField>
+
+<ParamField path="frameThickness" type="number" required>
+  Thickness of the door frame members in meters.
+  
+  **Default**: `0.05`
+  
+  **Example**: `0.05` (5cm frame)
+</ParamField>
+
+<ParamField path="frameDepth" type="number" required>
+  Depth of the frame within the wall in meters.
+  
+  **Default**: `0.07`
+  
+  **Example**: `0.07` (7cm deep frame)
+</ParamField>
+
+<ParamField path="threshold" type="boolean" required>
+  Whether to show a door threshold.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="thresholdHeight" type="number" required>
+  Height of the door threshold in meters.
+  
+  **Default**: `0.02`
+  
+  **Example**: `0.02` (2cm threshold)
+</ParamField>
+
+<ParamField path="hingesSide" type="'left' | 'right'" required>
+  Which side the hinges are on.
+  
+  **Default**: `"left"`
+  
+  **Values**:
+  - `"left"` - Hinges on the left side
+  - `"right"` - Hinges on the right side
+</ParamField>
+
+<ParamField path="swingDirection" type="'inward' | 'outward'" required>
+  Direction the door swings open.
+  
+  **Default**: `"inward"`
+  
+  **Values**:
+  - `"inward"` - Door swings into the room
+  - `"outward"` - Door swings out of the room
+</ParamField>
+
+<ParamField path="segments" type="Array<DoorSegment>" required>
+  Array of door leaf segments stacked from top to bottom.
+  
+  **Default**: Two panel segments with 0.4 and 0.6 height ratios
+  
+  Each segment defines:
+  - `type`: `"panel"`, `"glass"`, or `"empty"`
+  - `heightRatio`: Proportion of door height (must sum to 1.0)
+  - `columnRatios`: Horizontal divisions within the segment
+  - `dividerThickness`: Thickness of dividers (default: `0.03`)
+  - `panelDepth`: Depth of raised/recessed panel (default: `0.01`)
+  - `panelInset`: Inset from segment edge (default: `0.04`)
+</ParamField>
+
+<ParamField path="handle" type="boolean" required>
+  Whether to show a door handle.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="handleHeight" type="number" required>
+  Height of the door handle from the floor in meters.
+  
+  **Default**: `1.05`
+  
+  **Example**: `1.05` (standard handle height)
+</ParamField>
+
+<ParamField path="handleSide" type="'left' | 'right'" required>
+  Which side the handle is on.
+  
+  **Default**: `"right"`
+  
+  **Values**:
+  - `"left"` - Handle on the left side
+  - `"right"` - Handle on the right side
+</ParamField>
+
+<ParamField path="contentPadding" type="[number, number]" required>
+  Space between leaf edge and segment content area.
+  
+  **Format**: `[horizontal, vertical]` in meters
+  
+  **Default**: `[0.04, 0.04]`
+  
+  **Example**: `[0.04, 0.04]` (4cm padding on all sides)
+</ParamField>
+
+<ParamField path="doorCloser" type="boolean" required>
+  Whether to show a commercial door closer.
+  
+  **Default**: `false`
+  
+  Used for commercial or fire doors.
+</ParamField>
+
+<ParamField path="panicBar" type="boolean" required>
+  Whether to show an emergency panic bar.
+  
+  **Default**: `false`
+  
+  Used for emergency exits.
+</ParamField>
+
+<ParamField path="panicBarHeight" type="number" required>
+  Height of the panic bar from the floor in meters.
+  
+  **Default**: `1.0`
+  
+  **Example**: `1.0` (standard panic bar height)
+</ParamField>
+
+## DoorSegment Interface
+
+<ParamField path="type" type="'panel' | 'glass' | 'empty'" required>
+  Type of door segment.
+  
+  **Values**:
+  - `"panel"` - Raised or recessed panel
+  - `"glass"` - Glazed segment
+  - `"empty"` - Flush flat fill
+</ParamField>
+
+<ParamField path="heightRatio" type="number" required>
+  Proportion of the door height this segment occupies.
+  
+  **Example**: `0.4` (40% of door height)
+  
+  All segment heightRatios must sum to 1.0.
+</ParamField>
+
+<ParamField path="columnRatios" type="Array<number>" required>
+  Horizontal division ratios for columns within the segment.
+  
+  **Default**: `[1]` (single column)
+  
+  **Example**: `[0.5, 0.5]` (two equal columns), `[1]` (no division)
+</ParamField>
+
+<ParamField path="dividerThickness" type="number" required>
+  Thickness of dividers between columns in meters.
+  
+  **Default**: `0.03`
+</ParamField>
+
+<ParamField path="panelDepth" type="number" required>
+  Depth of raised (+) or recessed (-) panel in meters.
+  
+  **Default**: `0.01`
+  
+  **Example**: `0.01` (raised 1cm), `-0.01` (recessed 1cm)
+</ParamField>
+
+<ParamField path="panelInset" type="number" required>
+  Inset distance from segment edge to panel in meters.
+  
+  **Default**: `0.04`
+</ParamField>
+
+## Example
+
+```typescript
+import { DoorNode } from '@pascal/core/schema/nodes/door'
+
+const door: DoorNode = {
+  object: 'node',
+  id: 'door_abc123',
+  type: 'door',
+  name: 'Front Entry Door',
+  parentId: 'level_xyz789',
+  visible: true,
+  position: [4, 1.05, 0],
+  rotation: [0, 0, 0],
+  side: 'front',
+  wallId: 'wall_main',
+  width: 1.0,
+  height: 2.4,
+  frameThickness: 0.06,
+  frameDepth: 0.08,
+  threshold: true,
+  thresholdHeight: 0.02,
+  hingesSide: 'left',
+  swingDirection: 'inward',
+  segments: [
+    {
+      type: 'glass',
+      heightRatio: 0.3,
+      columnRatios: [1],
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+    {
+      type: 'panel',
+      heightRatio: 0.7,
+      columnRatios: [1],
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+  ],
+  handle: true,
+  handleHeight: 1.05,
+  handleSide: 'right',
+  contentPadding: [0.04, 0.04],
+  doorCloser: false,
+  panicBar: false,
+  panicBarHeight: 1.0,
+  metadata: {
+    material: 'wood',
+    finish: 'stained',
+  },
+}
+```
+
+## Usage
+
+### Creating a Standard Interior Door
+
+```typescript
+import { DoorNode } from '@pascal/core/schema/nodes/door'
+
+const interiorDoor = DoorNode.parse({
+  name: 'Bedroom Door',
+  wallId: 'wall_bedroom',
+  position: [2.5, 1.05, 0],
+  width: 0.8,
+  height: 2.0,
+  hingesSide: 'left',
+  swingDirection: 'inward',
+})
+```
+
+### Creating a Glass Panel Door
+
+```typescript
+const glassDoor = DoorNode.parse({
+  name: 'Office Glass Door',
+  wallId: 'wall_office',
+  width: 0.9,
+  height: 2.1,
+  segments: [
+    {
+      type: 'glass',
+      heightRatio: 1.0, // Full height glass
+      columnRatios: [1],
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+  ],
+})
+```
+
+### Creating a Double Panel Door
+
+```typescript
+const doublePanelDoor = DoorNode.parse({
+  name: 'Traditional Door',
+  wallId: 'wall_living',
+  width: 0.9,
+  height: 2.1,
+  segments: [
+    {
+      type: 'panel',
+      heightRatio: 0.5,
+      columnRatios: [0.5, 0.5], // Two columns
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+    {
+      type: 'panel',
+      heightRatio: 0.5,
+      columnRatios: [0.5, 0.5], // Two columns
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+  ],
+})
+```
+
+### Creating an Emergency Exit Door
+
+```typescript
+const exitDoor = DoorNode.parse({
+  name: 'Emergency Exit',
+  wallId: 'wall_exit',
+  width: 1.2,
+  height: 2.4,
+  swingDirection: 'outward',
+  doorCloser: true,
+  panicBar: true,
+  panicBarHeight: 1.0,
+  segments: [
+    {
+      type: 'empty', // Flush door
+      heightRatio: 1.0,
+      columnRatios: [1],
+      dividerThickness: 0.03,
+      panelDepth: 0,
+      panelInset: 0,
+    },
+  ],
+})
+```
+
+### Creating a Door with Glass Top Panel
+
+```typescript
+const hybridDoor = DoorNode.parse({
+  name: 'Entry Door',
+  wallId: 'wall_entry',
+  width: 1.0,
+  height: 2.4,
+  segments: [
+    {
+      type: 'glass',
+      heightRatio: 0.4, // Top 40% glass
+      columnRatios: [1],
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+    {
+      type: 'panel',
+      heightRatio: 0.6, // Bottom 60% panel
+      columnRatios: [1],
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+  ],
+})
+```
+
+## Door Configuration
+
+Doors support extensive configuration:
+- **Dimensions**: Width and height
+- **Frame**: Thickness and depth
+- **Threshold**: Optional with configurable height
+- **Segments**: Multiple segments with different types
+- **Hardware**: Handle, door closer, panic bar
+- **Operation**: Hinge side and swing direction
+
+## Coordinate System
+
+Doors use wall-local coordinates:
+- Position is relative to the wall's coordinate system
+- Y coordinate represents vertical center of the door
+- Side parameter determines which face of the wall
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [WallNode](/api/nodes/wall) - Parent wall containing doors
+- [WindowNode](/api/nodes/window) - Similar wall-mounted element

@@ -1,0 +1,415 @@
+---
+title: "WindowNode"
+description: "Node representing a parametric window with configurable frame, panes, and sill"
+---
+
+## Overview
+
+The `WindowNode` represents a configurable parametric window that can be placed on walls. It supports various window configurations including multi-pane divisions, frame customization, and optional sills.
+
+**Key features**:
+- Wall-mounted placement with configurable side
+- Flexible pane division with column and row ratios
+- Configurable frame and dividers
+- Optional window sill
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const WindowNode = BaseNode.extend({
+  id: objectId('window'),
+  type: nodeType('window'),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  side: z.enum(['front', 'back']).optional(),
+  wallId: z.string().optional(),
+  width: z.number().default(1.5),
+  height: z.number().default(1.5),
+  frameThickness: z.number().default(0.05),
+  frameDepth: z.number().default(0.07),
+  columnRatios: z.array(z.number()).default([1]),
+  rowRatios: z.array(z.number()).default([1]),
+  columnDividerThickness: z.number().default(0.03),
+  rowDividerThickness: z.number().default(0.03),
+  sill: z.boolean().default(true),
+  sillDepth: z.number().default(0.08),
+  sillThickness: z.number().default(0.03),
+})
+
+type WindowNode = z.infer<typeof WindowNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/window.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique window identifier.
+  
+  **Format**: `window_{randomString}`
+  
+  **Example**: `"window_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"window"`.
+  
+  **Default**: `"window"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the window.
+  
+  **Example**: `"Living Room Window"`, `"Bay Window"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent level's ID.
+  
+  **Example**: `"level_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls window visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the window.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the window.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Window-Specific Fields
+
+<ParamField path="position" type="[number, number, number]" required>
+  Center position of the window in wall-local coordinate system.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[2.5, 1.5, 0]` (2.5m along wall, 1.5m high)
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Rotation of the window in radians.
+  
+  **Format**: `[rx, ry, rz]` in radians
+  
+  **Default**: `[0, 0, 0]`
+</ParamField>
+
+<ParamField path="side" type="'front' | 'back'">
+  Which side of the wall the window is placed on.
+  
+  **Values**:
+  - `"front"` - Front side of the wall
+  - `"back"` - Back side of the wall
+</ParamField>
+
+<ParamField path="wallId" type="string">
+  Reference to the wall node ID this window is attached to.
+  
+  **Example**: `"wall_abc123"`
+</ParamField>
+
+<ParamField path="width" type="number" required>
+  Overall width of the window in meters.
+  
+  **Default**: `1.5`
+  
+  **Example**: `1.5` (standard window), `2.0` (wide window)
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Overall height of the window in meters.
+  
+  **Default**: `1.5`
+  
+  **Example**: `1.5` (standard window), `2.0` (tall window)
+</ParamField>
+
+<ParamField path="frameThickness" type="number" required>
+  Thickness of the window frame members in meters.
+  
+  **Default**: `0.05`
+  
+  **Example**: `0.05` (5cm frame)
+</ParamField>
+
+<ParamField path="frameDepth" type="number" required>
+  Depth of the frame within the wall in meters.
+  
+  **Default**: `0.07`
+  
+  **Example**: `0.07` (7cm deep frame)
+</ParamField>
+
+<ParamField path="columnRatios" type="Array<number>" required>
+  Horizontal pane division ratios.
+  
+  **Default**: `[1]` (single pane)
+  
+  **Examples**:
+  - `[1]` - Single pane, no vertical division
+  - `[0.5, 0.5]` - Two equal panes
+  - `[0.6, 0.4]` - One larger pane (60%), one smaller (40%)
+  
+  Values represent proportions and must sum to 1.0.
+</ParamField>
+
+<ParamField path="rowRatios" type="Array<number>" required>
+  Vertical pane division ratios.
+  
+  **Default**: `[1]` (single pane)
+  
+  **Examples**:
+  - `[1]` - Single pane, no horizontal division
+  - `[0.5, 0.5]` - Two equal panes (top and bottom)
+  - `[0.3, 0.7]` - Smaller top pane (30%), larger bottom pane (70%)
+  
+  Values represent proportions and must sum to 1.0.
+</ParamField>
+
+<ParamField path="columnDividerThickness" type="number" required>
+  Thickness of vertical dividers between columns in meters.
+  
+  **Default**: `0.03`
+  
+  **Example**: `0.03` (3cm divider)
+</ParamField>
+
+<ParamField path="rowDividerThickness" type="number" required>
+  Thickness of horizontal dividers between rows in meters.
+  
+  **Default**: `0.03`
+  
+  **Example**: `0.03` (3cm divider)
+</ParamField>
+
+<ParamField path="sill" type="boolean" required>
+  Whether to show a window sill.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="sillDepth" type="number" required>
+  Depth (projection) of the window sill in meters.
+  
+  **Default**: `0.08`
+  
+  **Example**: `0.08` (8cm sill projection)
+</ParamField>
+
+<ParamField path="sillThickness" type="number" required>
+  Thickness (height) of the window sill in meters.
+  
+  **Default**: `0.03`
+  
+  **Example**: `0.03` (3cm thick sill)
+</ParamField>
+
+## Example
+
+```typescript
+import { WindowNode } from '@pascal/core/schema/nodes/window'
+
+const window: WindowNode = {
+  object: 'node',
+  id: 'window_abc123',
+  type: 'window',
+  name: 'Living Room Window',
+  parentId: 'level_xyz789',
+  visible: true,
+  position: [4, 1.5, 0],
+  rotation: [0, 0, 0],
+  side: 'front',
+  wallId: 'wall_main',
+  width: 2.0,
+  height: 1.5,
+  frameThickness: 0.05,
+  frameDepth: 0.07,
+  columnRatios: [0.5, 0.5],
+  rowRatios: [1],
+  columnDividerThickness: 0.03,
+  rowDividerThickness: 0.03,
+  sill: true,
+  sillDepth: 0.1,
+  sillThickness: 0.03,
+  metadata: {
+    material: 'vinyl',
+    glazing: 'double',
+  },
+}
+```
+
+## Usage
+
+### Creating a Simple Single-Pane Window
+
+```typescript
+import { WindowNode } from '@pascal/core/schema/nodes/window'
+
+const singlePane = WindowNode.parse({
+  name: 'Simple Window',
+  wallId: 'wall_bedroom',
+  position: [3, 1.5, 0],
+  width: 1.2,
+  height: 1.5,
+  columnRatios: [1], // Single pane
+  rowRatios: [1],    // Single pane
+})
+```
+
+### Creating a Double-Hung Window (Two Vertical Panes)
+
+```typescript
+const doubleHung = WindowNode.parse({
+  name: 'Double-Hung Window',
+  wallId: 'wall_living',
+  width: 1.5,
+  height: 1.8,
+  columnRatios: [1],         // No vertical division
+  rowRatios: [0.5, 0.5],     // Two equal horizontal panes
+  sill: true,
+  sillDepth: 0.1,
+})
+```
+
+### Creating a Multi-Pane Window (Grid Pattern)
+
+```typescript
+const gridWindow = WindowNode.parse({
+  name: 'Grid Window',
+  wallId: 'wall_dining',
+  width: 2.0,
+  height: 1.5,
+  columnRatios: [0.33, 0.33, 0.34],  // Three columns
+  rowRatios: [0.5, 0.5],              // Two rows
+  columnDividerThickness: 0.03,
+  rowDividerThickness: 0.03,
+})
+// Creates a 3x2 grid of 6 panes
+```
+
+### Creating a Bay Window (Wide with Multiple Sections)
+
+```typescript
+const bayWindow = WindowNode.parse({
+  name: 'Bay Window',
+  wallId: 'wall_front',
+  width: 3.0,
+  height: 2.0,
+  columnRatios: [0.3, 0.4, 0.3],  // Three sections, center wider
+  rowRatios: [1],                   // Single height
+  frameThickness: 0.06,
+  sill: true,
+  sillDepth: 0.15, // Deeper sill for bay window
+})
+```
+
+### Creating a Picture Window (No Dividers)
+
+```typescript
+const pictureWindow = WindowNode.parse({
+  name: 'Picture Window',
+  wallId: 'wall_view',
+  width: 3.5,
+  height: 2.5,
+  columnRatios: [1],
+  rowRatios: [1],
+  frameThickness: 0.04, // Thinner frame for modern look
+  sill: false,           // No sill
+})
+```
+
+### Creating a Clerestory Window (High Window)
+
+```typescript
+const clerestory = WindowNode.parse({
+  name: 'Clerestory Window',
+  wallId: 'wall_great_room',
+  position: [5, 2.8, 0], // Higher position
+  width: 4.0,
+  height: 0.6, // Narrow horizontal window
+  columnRatios: [0.25, 0.25, 0.25, 0.25],
+  rowRatios: [1],
+  sill: false,
+})
+```
+
+### Creating a Window Without Sill
+
+```typescript
+const noSillWindow = WindowNode.parse({
+  name: 'Modern Window',
+  wallId: 'wall_modern',
+  width: 1.8,
+  height: 2.0,
+  sill: false, // No sill for flush appearance
+})
+```
+
+## Window Configuration
+
+Windows support flexible configuration:
+- **Dimensions**: Width and height
+- **Frame**: Thickness and depth
+- **Panes**: Column and row divisions with custom ratios
+- **Dividers**: Configurable thickness for mullions
+- **Sill**: Optional with depth and thickness control
+
+## Pane Division Examples
+
+```typescript
+// Single pane (no divisions)
+columnRatios: [1]
+rowRatios: [1]
+// Result: 1 pane
+
+// Two vertical panes (side by side)
+columnRatios: [0.5, 0.5]
+rowRatios: [1]
+// Result: 2 panes horizontal
+
+// Two horizontal panes (stacked)
+columnRatios: [1]
+rowRatios: [0.5, 0.5]
+// Result: 2 panes vertical
+
+// Four equal panes (2x2 grid)
+columnRatios: [0.5, 0.5]
+rowRatios: [0.5, 0.5]
+// Result: 4 panes in grid
+
+// Six panes (3x2 grid)
+columnRatios: [0.33, 0.33, 0.34]
+rowRatios: [0.5, 0.5]
+// Result: 6 panes in grid
+```
+
+## Coordinate System
+
+Windows use wall-local coordinates:
+- Position is relative to the wall's coordinate system
+- Y coordinate represents vertical center of the window
+- Side parameter determines which face of the wall
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [WallNode](/api/nodes/wall) - Parent wall containing windows
+- [DoorNode](/api/nodes/door) - Similar wall-mounted element

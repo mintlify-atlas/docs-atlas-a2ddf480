@@ -1,0 +1,388 @@
+---
+title: 'RoofSystem'
+description: 'React component that generates parametric gable roof geometry with pitch calculation'
+---
+
+## Overview
+
+The `RoofSystem` is a React component that processes dirty roof nodes and generates 3D gable roof geometry. It supports:
+
+- **Parametric gable roofs** with independent left/right widths
+- **Automatic pitch calculation** from rise, run, and material thicknesses
+- **Multi-layer construction** (cover layer + structure layer)
+- **Eave and rake overhangs** with configurable dimensions
+- **Gable walls** at front and back ends
+
+The system runs in a `useFrame` hook (default priority), ensuring roofs update after core systems.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/roof/roof-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Monitor dirty nodes">
+The system watches the `dirtyNodes` set for nodes with `type === 'roof'`.
+</Step>
+
+<Step title="Generate roof geometry">
+For each dirty roof:
+- Solve pitch angle from height, width, and layer thicknesses
+- Generate profiles for left and right sides
+- Extrude profiles along ridge length
+- Create gable walls at front and back
+- Merge all geometries into single mesh
+</Step>
+
+<Step title="Update mesh">
+Dispose old geometry and replace it with new geometry, updating position and rotation.
+</Step>
+
+<Step title="Clear dirty flag">
+Once the mesh is updated, the node is removed from `dirtyNodes`.
+</Step>
+</Steps>
+
+### Geometry Generation
+
+The `generateRoofGeometry()` function builds roof geometry in these steps:
+
+1. **Solve pitch angle** using `solvePitch()` to account for material thicknesses
+2. **Generate side profiles** for left and right slopes (cover, structure, walls)
+3. **Create THREE.Shape** from each profile
+4. **Extrude shapes** along ridge length with appropriate offsets
+5. **Add gable walls** at front and back ends
+6. **Merge geometries** into single buffer geometry
+7. **Center at X=0** by translating `-ridgeLength/2`
+
+## Props
+
+The `RoofSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need geometry updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### RoofNode Schema
+
+The system processes `RoofNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique roof identifier
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" default="[0, 0, 0]">
+  Center position of the roof (Y typically 0) `[x, y, z]`
+</ParamField>
+
+<ParamField path="rotation" type="number" default="0">
+  Rotation around Y axis in radians
+</ParamField>
+
+<ParamField path="length" type="number" default="4">
+  Length of the roof along the ridge direction in meters
+</ParamField>
+
+<ParamField path="height" type="number" default="1.5">
+  Height of the roof peak from the base in meters
+</ParamField>
+
+<ParamField path="leftWidth" type="number" default="1.5">
+  Horizontal width of the left slope (from ridge to eave) in meters
+</ParamField>
+
+<ParamField path="rightWidth" type="number" default="1.5">
+  Horizontal width of the right slope (from ridge to eave) in meters
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+
+## Roof Geometry Constants (roof-system.tsx:10-17)
+
+The system uses these architectural constants:
+
+```typescript
+const THICKNESS_A = 0.05        // Roof cover thickness (5cm)
+const THICKNESS_B = 0.1         // Structure thickness (10cm)
+const ROOF_COVER_OVERHANG = 0.05 // Extension of cover past structure (5cm)
+const EAVE_OVERHANG = 0.4       // Horizontal eave overhang (40cm)
+const RAKE_OVERHANG = 0.3       // Overhang at gable ends (30cm)
+const WALL_THICKNESS = 0.2      // Gable wall thickness (20cm)
+const BASE_HEIGHT = 0.5         // Base height / knee wall / truss heel (50cm)
+```
+
+## Pitch Calculation Algorithm
+
+### solvePitch() Function (roof-system.tsx:65-79)
+
+The pitch angle is solved analytically to account for material thicknesses:
+
+```typescript
+function solvePitch(rise: number, run: number, thickA: number, thickB: number): number {
+  // Solves: run * tan(a) + (ThickA + ThickB)/cos(a) = rise
+  const T = thickA + thickB
+  const R = Math.sqrt(run * run + rise * rise)
+  if (R <= T) return Math.atan2(rise, run) * 0.5  // Fallback
+  
+  const phi = Math.atan2(rise, run)
+  const shift = Math.asin(T / R)
+  
+  return phi - shift
+}
+```
+
+This ensures the roof peak reaches exactly `height` despite material thicknesses adding vertical dimension.
+
+## Roof Layers
+
+The roof consists of multiple layers per side:
+
+### Layer A: Roof Cover (roof-system.tsx:150-156)
+
+Outer weatherproofing layer:
+- Thickness: `THICKNESS_A` (5cm)
+- Extends beyond structure by `ROOF_COVER_OVERHANG` (5cm)
+- Includes eave overhang extension
+
+### Layer B: Structure (roof-system.tsx:158-164)
+
+Structural layer (sheathing/decking):
+- Thickness: `THICKNESS_B` (10cm)
+- Extends to eave overhang but not beyond
+- Sits below cover layer
+
+### Side Walls (roof-system.tsx:166-175)
+
+Vertical gable walls:
+- Thickness: `WALL_THICKNESS` (20cm)
+- Height: From base (0) to sloped top
+- Positioned at left/right edges
+
+### Gable Fill (roof-system.tsx:177-191)
+
+Triangular gable end fill:
+- **C1**: Upper triangle (from base height to ridge)
+- **C2**: Lower rectangle (from 0 to base height)
+- Created at front and back ends
+
+## Profile Generation
+
+### getSideProfile() Function (roof-system.tsx:103-194)
+
+Generates 2D profiles for one side (left or right):
+
+<Steps>
+<Step title="Calculate geometry">
+```typescript
+const rise = Math.max(0, roofHeight - BASE_HEIGHT)
+const run = width - WALL_THICKNESS / 2
+const angle = solvePitch(rise, run, THICKNESS_A, THICKNESS_B)
+```
+</Step>
+
+<Step title="Compute ridge heights">
+```typescript
+const ridgeUnderY = BASE_HEIGHT + run * tan(angle)
+const ridgeInterfaceY = ridgeUnderY + THICKNESS_B / cos(angle)
+const ridgeTopY = ridgeInterfaceY + THICKNESS_A / cos(angle)
+```
+</Step>
+
+<Step title="Calculate eave points">
+```typescript
+const overhangDx = EAVE_OVERHANG * cos(angle)
+const eaveTopZ = width + WALL_THICKNESS/2 + overhangDx
+const eaveTopY = ridgeTopY - eaveTopZ * tan(angle)
+```
+</Step>
+
+<Step title="Build point arrays">
+Return profiles for cover (A), structure (B), side walls, and gable fill (C1, C2).
+</Step>
+</Steps>
+
+## Extrusion and Assembly (roof-system.tsx:196-272)
+
+### Extrusion Lengths
+
+```typescript
+const lengths = {
+  A: ridgeLength + 2 * RAKE_OVERHANG + 2 * ROOF_COVER_OVERHANG + WALL_THICKNESS,
+  B: ridgeLength + 2 * RAKE_OVERHANG + WALL_THICKNESS,
+  Side: ridgeLength + WALL_THICKNESS,
+  Gable: WALL_THICKNESS,
+}
+```
+
+### Extrusion Offsets
+
+```typescript
+const offsets = {
+  A: -RAKE_OVERHANG - ROOF_COVER_OVERHANG - WALL_THICKNESS / 2,
+  B: -RAKE_OVERHANG - WALL_THICKNESS / 2,
+  Side: -WALL_THICKNESS / 2,
+  GableFront: -WALL_THICKNESS / 2,
+  GableBack: ridgeLength - WALL_THICKNESS / 2,
+}
+```
+
+### createPart() Helper (roof-system.tsx:239-245)
+
+```typescript
+const createPart = (shape: THREE.Shape, depth: number, xOffset: number) => {
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false })
+  geo.rotateY(Math.PI / 2)  // Extrusion goes along X axis
+  geo.translate(xOffset, 0, 0)
+  return geo
+}
+```
+
+### Geometry Merging (roof-system.tsx:274-302)
+
+All parts are merged into a single `BufferGeometry`:
+
+1. Extract position, normal, and UV attributes from each part
+2. Concatenate into flat arrays
+3. Create new `BufferGeometry` with merged attributes
+4. Compute vertex normals
+5. Dispose individual geometries
+
+## Roof Centering (roof-system.tsx:313-314)
+
+The final geometry is centered at X=0:
+
+```typescript
+mergedGeometry.translate(-ridgeLength / 2, 0, 0)
+```
+
+This matches the old geometry centering behavior and makes rotation around the Y-axis intuitive.
+
+## Usage in Viewer
+
+```tsx
+import { RoofSystem } from '@pascal/core/systems/roof/roof-system'
+import { useScene } from '@pascal/core/store/use-scene'
+
+function createRoof() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const roof = {
+    id: 'roof_1',
+    type: 'roof',
+    parentId: 'level_2',
+    position: [0, 3.0, 0],  // Y = top of walls
+    rotation: 0,            // Aligned with level
+    length: 10,             // 10m ridge
+    height: 2.5,            // 2.5m peak height
+    leftWidth: 4,           // 4m left slope
+    rightWidth: 4,          // 4m right slope (symmetric)
+  }
+  
+  addNode(roof)
+  markDirty(roof.id)
+}
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <RoofSystem />
+    </Canvas>
+  )
+}
+```
+
+The system automatically:
+- Monitors the `dirtyNodes` store
+- Updates roofs when they're marked dirty
+- Generates complete roof geometry with all layers
+
+## Asymmetric Roofs
+
+The system supports asymmetric gable roofs with different left/right widths:
+
+```typescript
+const asymmetricRoof = {
+  length: 8,
+  height: 2.0,
+  leftWidth: 3,   // Shorter left slope
+  rightWidth: 5,  // Longer right slope (shed-style)
+}
+```
+
+The ridge is always at X=0 (centered), and slopes extend different distances left and right.
+
+## Coordinate System
+
+Roofs use **level coordinates**:
+
+- **X-axis**: Along ridge direction (length)
+- **Y-axis**: Vertical (height)
+- **Z-axis**: Perpendicular to ridge (width)
+
+The roof's `position` is at the base center, with `rotation` around the Y-axis.
+
+## Overhang Details
+
+### Eave Overhang
+
+Horizontal extension beyond walls at the eaves (low sides):
+- Default: `0.4m` (40cm)
+- Measured horizontally (not along slope)
+- Provides weather protection for walls
+
+### Rake Overhang
+
+Extension beyond gable walls at the ends:
+- Default: `0.3m` (30cm)
+- Extends ridge length
+- Creates shadow lines on gable ends
+
+### Roof Cover Overhang
+
+Cover layer extends beyond structure:
+- Default: `0.05m` (5cm)
+- Provides drip edge
+- Prevents water infiltration at edges
+
+## Integration with Other Systems
+
+### Wall System
+
+Roofs typically sit on top of walls:
+- Roof `position.y` = top of walls
+- Gable walls align with building walls below
+- Base height (`BASE_HEIGHT`) creates attic knee wall
+
+### Level System
+
+Roofs are parented to the top level of a building:
+- Upper floor level contains roof nodes
+- Roof elevation matches ceiling height of top floor
+
+## Performance Notes
+
+- Only updates dirty roofs (not all roofs every frame)
+- Merges all roof parts into single geometry for efficient rendering
+- Disposes intermediate geometries to prevent memory leaks
+- Pre-computes all profiles before extrusion
+- Reuses shape objects for left/right gable walls
+
+## Related
+
+- [WallSystem](/api/systems/wall-system) - Manages wall geometry that roofs sit on
+- [CeilingSystem](/api/systems/ceiling-system) - Manages ceiling geometry below roofs
+- [SlabSystem](/api/systems/slab-system) - Similar polygon-based geometry system

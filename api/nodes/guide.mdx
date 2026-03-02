@@ -1,0 +1,375 @@
+---
+title: "GuideNode"
+description: "Node representing a 2D reference image overlay with position and opacity control"
+---
+
+## Overview
+
+The `GuideNode` represents a 2D reference image that can be overlaid in the scene as a guide. This is useful for importing floor plans, elevation drawings, or other 2D reference imagery to use as a basis for creating the building model.
+
+**Key features**:
+- Reference to 2D image asset via URL
+- Position, rotation, and scale transformations
+- Opacity control for overlay visualization
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const GuideNode = BaseNode.extend({
+  id: objectId('guide'),
+  type: nodeType('guide'),
+  url: z.string(),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  scale: z.number().default(1),
+  opacity: z.number().min(0).max(100).default(50),
+})
+
+type GuideNode = z.infer<typeof GuideNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/guide.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique guide identifier.
+  
+  **Format**: `guide_{randomString}`
+  
+  **Example**: `"guide_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"guide"`.
+  
+  **Default**: `"guide"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the guide.
+  
+  **Example**: `"Ground Floor Plan"`, `"North Elevation"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent node's ID (typically a Level or Building).
+  
+  **Example**: `"level_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls guide visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the guide.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the guide.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Guide-Specific Fields
+
+<ParamField path="url" type="string" required>
+  URL or path to the 2D reference image asset.
+  
+  **Example**: `"https://example.com/plans/floor1.png"`, `"/assets/elevation.jpg"`
+  
+  Supported formats typically include: PNG, JPG, JPEG, SVG, or other image formats.
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" required>
+  Position of the guide in 3D space.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[5, 0, 5]` (positioned at ground level, 5m along X and Z)
+  
+  Typically, floor plan guides are positioned at Y=0 (ground level) or at the level elevation.
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Rotation of the guide around X, Y, and Z axes in radians.
+  
+  **Format**: `[rx, ry, rz]` in radians
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[-Math.PI / 2, 0, 0]` (rotate to lie flat on ground plane)
+  
+  For floor plans, typically rotate -90° around X axis to lay flat.
+</ParamField>
+
+<ParamField path="scale" type="number" required>
+  Uniform scale factor for the guide image.
+  
+  **Default**: `1`
+  
+  **Example**: `1.0` (original size), `0.1` (10% size), `10.0` (10x size)
+  
+  Adjust this to match the image to the scene's coordinate system scale.
+</ParamField>
+
+<ParamField path="opacity" type="number" required>
+  Opacity of the guide visualization (0-100).
+  
+  **Default**: `50`
+  
+  **Range**: `0` (fully transparent) to `100` (fully opaque)
+  
+  **Example**: `50` (50% transparent), `30` (faint reference)
+  
+  Lower opacity values are useful for using the guide as a background reference while modeling.
+</ParamField>
+
+## Example
+
+```typescript
+import { GuideNode } from '@pascal/core/schema/nodes/guide'
+
+const guide: GuideNode = {
+  object: 'node',
+  id: 'guide_abc123',
+  type: 'guide',
+  name: 'Ground Floor Plan',
+  parentId: 'level_ground',
+  visible: true,
+  url: 'https://storage.example.com/plans/ground_floor.png',
+  position: [0, 0, 0],
+  rotation: [-Math.PI / 2, 0, 0], // Lay flat on ground
+  scale: 0.05, // Scale to match meters
+  opacity: 40,
+  metadata: {
+    source: 'architect drawings',
+    date: '2024-01-15',
+    scale: '1:100',
+  },
+}
+```
+
+## Usage
+
+### Creating a Floor Plan Guide
+
+```typescript
+import { GuideNode } from '@pascal/core/schema/nodes/guide'
+
+const floorPlan = GuideNode.parse({
+  name: 'First Floor Plan',
+  parentId: 'level_first',
+  url: '/assets/floor_plans/first_floor.png',
+  position: [0, 0, 0],
+  rotation: [-Math.PI / 2, 0, 0], // Rotate to horizontal plane
+  scale: 0.05, // Adjust scale to match scene units
+  opacity: 50,
+})
+```
+
+### Creating an Elevation Guide
+
+```typescript
+const elevationGuide = GuideNode.parse({
+  name: 'North Elevation',
+  parentId: 'building_main',
+  url: '/assets/elevations/north.jpg',
+  position: [0, 1.5, -10], // Position in front of building
+  rotation: [0, 0, 0], // Vertical orientation
+  scale: 0.1,
+  opacity: 60,
+})
+```
+
+### Creating Multiple Floor Plan Guides
+
+```typescript
+const groundFloorGuide = GuideNode.parse({
+  name: 'Ground Floor Reference',
+  parentId: 'level_ground',
+  url: '/plans/ground.png',
+  position: [0, 0, 0],
+  rotation: [-Math.PI / 2, 0, 0],
+  scale: 0.05,
+  opacity: 40,
+})
+
+const firstFloorGuide = GuideNode.parse({
+  name: 'First Floor Reference',
+  parentId: 'level_first',
+  url: '/plans/first.png',
+  position: [0, 3, 0], // 3m above ground
+  rotation: [-Math.PI / 2, 0, 0],
+  scale: 0.05,
+  opacity: 40,
+})
+```
+
+### Creating a Rotated Site Plan Guide
+
+```typescript
+const sitePlan = GuideNode.parse({
+  name: 'Site Plan',
+  parentId: 'site_main',
+  url: '/plans/site_plan.png',
+  position: [0, 0, 0],
+  rotation: [-Math.PI / 2, Math.PI / 4, 0], // Flat + 45° rotation
+  scale: 0.2,
+  opacity: 30, // Very faint for context
+})
+```
+
+### Creating a High-Opacity Guide for Tracing
+
+```typescript
+const tracingGuide = GuideNode.parse({
+  name: 'Tracing Reference',
+  url: '/images/detailed_plan.png',
+  position: [0, 0.01, 0], // Slightly above ground to avoid z-fighting
+  rotation: [-Math.PI / 2, 0, 0],
+  scale: 0.05,
+  opacity: 70, // More opaque for detailed tracing
+})
+```
+
+### Creating a Scaled Architectural Drawing
+
+```typescript
+const architecturalDrawing = GuideNode.parse({
+  name: 'Architectural Plan 1:50',
+  url: '/drawings/plan_1_50.pdf',
+  position: [0, 0, 0],
+  rotation: [-Math.PI / 2, 0, 0],
+  scale: 0.02, // Adjust based on drawing scale
+  opacity: 50,
+  metadata: {
+    drawingScale: '1:50',
+    units: 'meters',
+  },
+})
+```
+
+## Common Use Cases
+
+### Floor Plan Tracing
+
+Load floor plan images to trace walls and rooms:
+
+```typescript
+const floorPlanGuide = GuideNode.parse({
+  name: 'Floor Plan for Tracing',
+  url: '/plans/layout.png',
+  position: [0, 0, 0],
+  rotation: [-Math.PI / 2, 0, 0], // Horizontal
+  scale: 0.05,
+  opacity: 50,
+  metadata: {
+    purpose: 'wall tracing reference',
+  },
+})
+```
+
+### Elevation Reference
+
+Use elevation drawings to model facade details:
+
+```typescript
+const elevationRef = GuideNode.parse({
+  name: 'South Elevation',
+  url: '/elevations/south.jpg',
+  position: [5, 1.5, 15],
+  rotation: [0, Math.PI, 0], // Facing building
+  scale: 0.08,
+  opacity: 60,
+  metadata: {
+    purpose: 'facade modeling',
+  },
+})
+```
+
+### Site Context
+
+Overlay site survey or aerial imagery:
+
+```typescript
+const aerialImage = GuideNode.parse({
+  name: 'Aerial Photo',
+  parentId: 'site_main',
+  url: '/site/aerial.jpg',
+  position: [0, -0.1, 0], // Slightly below ground
+  rotation: [-Math.PI / 2, 0, 0],
+  scale: 1.0,
+  opacity: 25, // Very transparent background
+  metadata: {
+    purpose: 'site context',
+  },
+})
+```
+
+## Positioning Floor Plans
+
+For floor plan guides, use these common settings:
+
+```typescript
+// Standard horizontal floor plan
+const standardFloorPlan = {
+  position: [0, 0, 0],           // At ground level
+  rotation: [-Math.PI / 2, 0, 0], // Rotate to horizontal plane
+  opacity: 50,                    // Semi-transparent
+}
+
+// Elevated floor plan (for upper levels)
+const upperFloorPlan = {
+  position: [0, 3, 0],            // 3m elevation
+  rotation: [-Math.PI / 2, 0, 0],
+  opacity: 50,
+}
+```
+
+## Coordinate System
+
+Guides use 3D world coordinates:
+- X axis: horizontal (left-right)
+- Y axis: vertical (up-down)
+- Z axis: horizontal (front-back)
+- Rotation: Euler angles [rx, ry, rz] in radians
+- Scale: Uniform scaling factor
+
+## Supported Formats
+
+While the schema accepts any URL string, common image formats include:
+- PNG (recommended for transparency)
+- JPG/JPEG (for photographs)
+- SVG (for vector drawings)
+- GIF
+- WebP
+
+Check your viewer's documentation for supported formats.
+
+## Tips for Using Guides
+
+1. **Scaling**: Measure a known dimension in the image and adjust the scale to match scene units
+2. **Opacity**: Start with 50% opacity and adjust based on visibility needs
+3. **Position**: For floor plans, set Y=0 or to the level elevation; for elevations, position away from the building
+4. **Rotation**: Floor plans typically need -90° X rotation to lie flat
+5. **Layers**: Use multiple guides with different opacities for different reference layers
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [ScanNode](/api/nodes/scan) - 3D point cloud references (similar concept)
+- [LevelNode](/api/nodes/level) - Typical parent for floor plan guides
+- [BuildingNode](/api/nodes/building) - Typical parent for elevation guides

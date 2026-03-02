@@ -1,0 +1,318 @@
+---
+title: "RoofNode"
+description: "Node representing a gable roof with configurable pitch and dimensions"
+---
+
+## Overview
+
+The `RoofNode` represents a gable roof structure. It is defined by a ridge line with configurable left and right slope widths, creating an asymmetric or symmetric pitched roof.
+
+**Key features**:
+- Gable roof geometry with ridge line
+- Configurable left and right slope widths
+- Adjustable peak height and roof length
+- Position and rotation control
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const RoofNode = BaseNode.extend({
+  id: objectId('roof'),
+  type: nodeType('roof'),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.number().default(0),
+  length: z.number().default(4),
+  height: z.number().default(1.5),
+  leftWidth: z.number().default(1.5),
+  rightWidth: z.number().default(1.5),
+})
+
+type RoofNode = z.infer<typeof RoofNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/roof.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique roof identifier.
+  
+  **Format**: `roof_{randomString}`
+  
+  **Example**: `"roof_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"roof"`.
+  
+  **Default**: `"roof"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the roof.
+  
+  **Example**: `"Main Building Roof"`, `"Gable Roof A"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent building or level's ID.
+  
+  **Example**: `"building_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls roof visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the roof.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the roof.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Roof-Specific Fields
+
+<ParamField path="position" type="[number, number, number]" required>
+  Center position of the roof in 3D space.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[10, 3, 5]`
+  
+  The Y coordinate should typically be set to the top of the walls where the roof begins.
+</ParamField>
+
+<ParamField path="rotation" type="number" required>
+  Rotation around the Y axis in radians.
+  
+  **Default**: `0`
+  
+  **Example**: `0` (no rotation), `Math.PI / 2` (90° rotation)
+  
+  This controls the orientation of the ridge line.
+</ParamField>
+
+<ParamField path="length" type="number" required>
+  Length of the roof along the ridge direction in meters.
+  
+  **Default**: `4`
+  
+  **Example**: `8` (8-meter long ridge)
+  
+  This determines how long the roof extends along the ridge line.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Height of the roof peak from the base in meters.
+  
+  **Default**: `1.5`
+  
+  **Example**: `2.0` (2-meter peak height)
+  
+  This defines the vertical distance from the base (eaves) to the ridge (peak).
+</ParamField>
+
+<ParamField path="leftWidth" type="number" required>
+  Horizontal width of the left slope in meters, measured from the ridge to the eave.
+  
+  **Default**: `1.5`
+  
+  **Example**: `2.5` (2.5-meter left slope)
+  
+  This is the horizontal projection of the left slope, not the actual slant length.
+</ParamField>
+
+<ParamField path="rightWidth" type="number" required>
+  Horizontal width of the right slope in meters, measured from the ridge to the eave.
+  
+  **Default**: `1.5`
+  
+  **Example**: `2.5` (2.5-meter right slope)
+  
+  This is the horizontal projection of the right slope, not the actual slant length. For a symmetric gable roof, set `leftWidth` equal to `rightWidth`.
+</ParamField>
+
+## Example
+
+```typescript
+import { RoofNode } from '@pascal/core/schema/nodes/roof'
+
+const roof: RoofNode = {
+  object: 'node',
+  id: 'roof_abc123',
+  type: 'roof',
+  name: 'Main Gable Roof',
+  parentId: 'building_xyz789',
+  visible: true,
+  position: [10, 3, 5],
+  rotation: 0,
+  length: 8,
+  height: 2.5,
+  leftWidth: 3,
+  rightWidth: 3,
+  metadata: {
+    material: 'asphalt shingles',
+    color: 'gray',
+  },
+}
+```
+
+## Usage
+
+### Creating a Symmetric Gable Roof
+
+```typescript
+import { RoofNode } from '@pascal/core/schema/nodes/roof'
+
+const symmetricRoof = RoofNode.parse({
+  name: 'Symmetric Gable',
+  position: [0, 3, 0],
+  length: 10,
+  height: 2,
+  leftWidth: 4,
+  rightWidth: 4, // Same as leftWidth for symmetry
+})
+```
+
+### Creating an Asymmetric Gable Roof
+
+```typescript
+const asymmetricRoof = RoofNode.parse({
+  name: 'Asymmetric Gable',
+  position: [0, 3, 0],
+  length: 8,
+  height: 2.5,
+  leftWidth: 3,
+  rightWidth: 5, // Different widths create asymmetry
+})
+```
+
+### Creating a Steep Pitched Roof
+
+```typescript
+const steepRoof = RoofNode.parse({
+  name: 'Steep Pitch Roof',
+  position: [0, 3, 0],
+  length: 12,
+  height: 4, // Higher peak
+  leftWidth: 3,
+  rightWidth: 3,
+})
+
+// Calculate pitch angle:
+// pitch = atan(height / width) = atan(4 / 3) ≈ 53.13°
+```
+
+### Creating a Shallow Pitched Roof
+
+```typescript
+const shallowRoof = RoofNode.parse({
+  name: 'Shallow Pitch Roof',
+  position: [0, 3, 0],
+  length: 10,
+  height: 1, // Lower peak
+  leftWidth: 5,
+  rightWidth: 5,
+})
+
+// Calculate pitch angle:
+// pitch = atan(height / width) = atan(1 / 5) ≈ 11.31°
+```
+
+### Rotated Roof
+
+```typescript
+const rotatedRoof = RoofNode.parse({
+  name: 'Rotated Gable',
+  position: [10, 3, 10],
+  rotation: Math.PI / 4, // 45° rotation
+  length: 8,
+  height: 2,
+  leftWidth: 3,
+  rightWidth: 3,
+})
+```
+
+## Roof Geometry
+
+The roof is rendered as a gable (two-slope) structure:
+- **Ridge**: Peak line running along the length
+- **Left Slope**: Plane from ridge to left eave
+- **Right Slope**: Plane from ridge to right eave
+- **Total Width**: `leftWidth + rightWidth`
+
+```
+         Side View:
+         
+              ▲
+             /│\ ← height
+            / │ \
+           /  │  \
+          /   │   \
+         /____│____\
+         ←───→←───→
+         left  right
+         Width Width
+         
+         Front View:
+         
+         ┌──────────┐
+         │          │ ← length (ridge line)
+         └──────────┘
+         
+         Top View:
+         
+         ╱──────────╲
+         │          │ ← ridge line (length)
+         ╲──────────╱
+         ←──────────→
+           total width
+```
+
+## Calculating Roof Pitch
+
+The pitch (slope angle) of each side can be calculated:
+
+```typescript
+// Left slope pitch angle (in radians)
+const leftPitchRadians = Math.atan(roof.height / roof.leftWidth)
+
+// Right slope pitch angle (in radians)
+const rightPitchRadians = Math.atan(roof.height / roof.rightWidth)
+
+// Convert to degrees
+const leftPitchDegrees = leftPitchRadians * (180 / Math.PI)
+const rightPitchDegrees = rightPitchRadians * (180 / Math.PI)
+
+// Example: height=2, width=3
+// pitch = atan(2/3) ≈ 33.69°
+```
+
+## Coordinate System
+
+Roofs use 3D coordinates:
+- X axis: horizontal (left-right)
+- Y axis: vertical (up-down)
+- Z axis: horizontal (front-back)
+- Rotation: around Y axis (vertical)
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [BuildingNode](/api/nodes/building) - Parent node containing roofs
+- [LevelNode](/api/nodes/level) - Levels that roofs cover

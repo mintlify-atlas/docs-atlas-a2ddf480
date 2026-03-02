@@ -1,0 +1,334 @@
+---
+title: "CeilingNode"
+description: "Node representing a ceiling surface with polygon boundary and height"
+---
+
+## Overview
+
+The `CeilingNode` represents a ceiling surface within a level. Ceilings are defined by a polygon boundary with support for holes (for skylights, vents, etc.), and can have items attached to them (light fixtures, ceiling fans, etc.).
+
+**Key features**:
+- Polygon-based boundary definition
+- Support for holes (skylights, ceiling vents)
+- Configurable height
+- Can host ceiling-mounted items (lights, fans, fixtures)
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+import { ItemNode } from './item'
+
+const CeilingNode = BaseNode.extend({
+  id: objectId('ceiling'),
+  type: nodeType('ceiling'),
+  children: z.array(ItemNode.shape.id).default([]),
+  polygon: z.array(z.tuple([z.number(), z.number()])),
+  holes: z.array(z.array(z.tuple([z.number(), z.number()]))).default([]),
+  height: z.number().default(2.5),
+})
+
+type CeilingNode = z.infer<typeof CeilingNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/ceiling.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique ceiling identifier.
+  
+  **Format**: `ceiling_{randomString}`
+  
+  **Example**: `"ceiling_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"ceiling"`.
+  
+  **Default**: `"ceiling"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the ceiling.
+  
+  **Example**: `"Living Room Ceiling"`, `"Suspended Ceiling"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent level's ID.
+  
+  **Example**: `"level_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls ceiling visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the ceiling.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the ceiling.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Ceiling-Specific Fields
+
+<ParamField path="polygon" type="Array<[number, number]>" required>
+  Array of [x, z] coordinates defining the ceiling boundary.
+  
+  **Format**: `[[x1, z1], [x2, z2], [x3, z3], ...]` in meters
+  
+  **Example**: `[[0, 0], [5, 0], [5, 4], [0, 4]]` (rectangular 5m × 4m ceiling)
+  
+  Points should be ordered counter-clockwise to define the ceiling surface.
+</ParamField>
+
+<ParamField path="holes" type="Array<Array<[number, number]>>">
+  Array of polygons representing holes in the ceiling (for skylights, vents, etc.).
+  
+  **Default**: `[]`
+  
+  **Format**: Each hole is an array of [x, z] coordinates
+  
+  **Example**:
+  ```typescript
+  [
+    [[2, 2], [3, 2], [3, 3], [2, 3]], // Skylight hole
+  ]
+  ```
+  
+  Hole polygons should also be ordered counter-clockwise.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Height of the ceiling from the level floor in meters.
+  
+  **Default**: `2.5`
+  
+  **Example**: `2.5` (standard 2.5m ceiling height), `3.0` (high ceiling)
+  
+  This defines the vertical position (Y coordinate) of the ceiling surface.
+</ParamField>
+
+<ParamField path="children" type="Array<string>" required>
+  Array of item node IDs attached to this ceiling (lights, fans, fixtures).
+  
+  **Default**: `[]`
+  
+  **Example**: `["item_light_001", "item_fan_001"]`
+  
+  Ceiling-mounted items reference the ceiling and their position on it.
+</ParamField>
+
+## Example
+
+```typescript
+import { CeilingNode } from '@pascal/core/schema/nodes/ceiling'
+
+const ceiling: CeilingNode = {
+  object: 'node',
+  id: 'ceiling_abc123',
+  type: 'ceiling',
+  name: 'Living Room Ceiling',
+  parentId: 'level_xyz789',
+  visible: true,
+  polygon: [
+    [0, 0],
+    [8, 0],
+    [8, 6],
+    [0, 6],
+  ],
+  holes: [
+    [
+      [3, 2],
+      [5, 2],
+      [5, 4],
+      [3, 4],
+    ],
+  ],
+  height: 2.8,
+  children: [
+    'item_light_center',
+    'item_light_corner1',
+  ],
+  metadata: {
+    material: 'drywall',
+    finish: 'painted',
+  },
+}
+```
+
+## Usage
+
+### Creating a Simple Rectangular Ceiling
+
+```typescript
+import { CeilingNode } from '@pascal/core/schema/nodes/ceiling'
+
+const ceiling = CeilingNode.parse({
+  polygon: [
+    [0, 0],
+    [6, 0],
+    [6, 5],
+    [0, 5],
+  ],
+  height: 2.8,
+})
+```
+
+### Creating a Ceiling with Skylight
+
+```typescript
+const ceilingWithSkylight = CeilingNode.parse({
+  name: 'Kitchen Ceiling',
+  polygon: [
+    [0, 0],
+    [8, 0],
+    [8, 6],
+    [0, 6],
+  ],
+  holes: [
+    // Skylight in center
+    [
+      [3, 2.5],
+      [5, 2.5],
+      [5, 3.5],
+      [3, 3.5],
+    ],
+  ],
+  height: 2.8,
+})
+```
+
+### Creating an L-Shaped Ceiling
+
+```typescript
+const lShapedCeiling = CeilingNode.parse({
+  name: 'L-Shaped Room Ceiling',
+  polygon: [
+    [0, 0],
+    [5, 0],
+    [5, 3],
+    [8, 3],
+    [8, 6],
+    [0, 6],
+  ],
+  height: 2.5,
+})
+```
+
+### Suspended Ceiling with Multiple Holes
+
+```typescript
+const suspendedCeiling = CeilingNode.parse({
+  name: 'Office Suspended Ceiling',
+  polygon: [
+    [0, 0],
+    [10, 0],
+    [10, 8],
+    [0, 8],
+  ],
+  holes: [
+    // Vent hole 1
+    [
+      [2, 2],
+      [3, 2],
+      [3, 3],
+      [2, 3],
+    ],
+    // Vent hole 2
+    [
+      [7, 5],
+      [8, 5],
+      [8, 6],
+      [7, 6],
+    ],
+  ],
+  height: 2.6, // Lower suspended ceiling
+})
+```
+
+### Adding Ceiling-Mounted Lights
+
+```typescript
+import { ItemNode } from '@pascal/core/schema/nodes/item'
+
+// Create ceiling
+const ceiling = CeilingNode.parse({
+  polygon: [
+    [0, 0],
+    [6, 0],
+    [6, 5],
+    [0, 5],
+  ],
+  height: 2.8,
+})
+
+// Create ceiling light attached to ceiling
+const light = ItemNode.parse({
+  asset: {
+    id: 'light-001',
+    category: 'lighting',
+    name: 'Recessed Light',
+    src: '/models/light.glb',
+    dimensions: [0.15, 0.1, 0.15],
+    attachTo: 'ceiling',
+  },
+  position: [3, 2.8, 2.5], // Center of ceiling
+})
+
+// Update ceiling's children
+ceiling.children = [light.id]
+```
+
+## Ceiling Geometry
+
+The ceiling is rendered as a horizontal surface at the specified height:
+- **Boundary**: Defined by the polygon vertices
+- **Holes**: Cut-out regions within the boundary
+- **Height**: Y coordinate of the ceiling surface
+
+```
+         Top View:
+         
+         ┌─────────────────┐
+         │                 │
+         │  ┌─────┐        │  ← polygon boundary
+         │  │hole │        │
+         │  └─────┘        │
+         └─────────────────┘
+         
+         Side View:
+         
+                            ← height (Y)
+         ─────────────────
+         
+         
+         
+         ─────────────────  ← level floor (Y = 0)
+```
+
+## Coordinate System
+
+Ceilings use 2D coordinates in the level's XZ plane for the polygon:
+- X axis: horizontal (left-right)
+- Z axis: horizontal (front-back)
+- Y axis: vertical (defined by height property)
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [LevelNode](/api/nodes/level) - Parent node containing ceilings
+- [ItemNode](/api/nodes/item) - Items attached to ceilings
+- [SlabNode](/api/nodes/slab) - Floor equivalent of ceilings

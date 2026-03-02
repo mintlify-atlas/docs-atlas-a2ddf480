@@ -1,0 +1,437 @@
+---
+title: 'WindowSystem'
+description: 'React component that generates parametric window geometry with CSG cutouts in walls'
+---
+
+## Overview
+
+The `WindowSystem` is a React component that processes dirty window nodes and generates 3D window geometry. It supports:
+
+- **Parametric window geometry** with configurable pane grids
+- **CSG cutouts** in parent walls for window openings
+- **Multi-pane layouts** with independent row and column divisions
+- **Optional sill** with configurable depth and thickness
+- **Flexible divider spacing** for custom pane arrangements
+
+The system runs in a `useFrame` hook at priority `3`, ensuring windows update after items and slabs but before wall CSG operations.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/window/window-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Monitor dirty nodes">
+The system watches the `dirtyNodes` set for nodes with `type === 'window'`.
+</Step>
+
+<Step title="Update window geometry">
+For each dirty window:
+- Generate new geometry from window parameters
+- Create frame members (top, bottom, left, right)
+- Build pane grid with column and row dividers
+- Add glass panes for each grid cell
+- Add optional sill
+- Update the invisible cutout mesh for wall CSG
+</Step>
+
+<Step title="Mark parent wall dirty">
+Trigger parent wall rebuild so its CSG cutout reflects the updated window geometry.
+</Step>
+
+<Step title="Clear dirty flag">
+Once the mesh is updated, the node is removed from `dirtyNodes`.
+</Step>
+</Steps>
+
+### Geometry Generation
+
+The `updateWindowMesh()` function builds window geometry in these steps:
+
+1. **Create invisible hitbox** (root mesh for selection)
+2. **Build frame members** (top, bottom, left, right)
+3. **Calculate pane grid layout** from `columnRatios` and `rowRatios`
+4. **Add column dividers** (full inner height)
+5. **Add row dividers** (per column width to avoid overlap)
+6. **Add glass panes** for each grid cell
+7. **Add optional sill** (protrudes from front face)
+8. **Update cutout mesh** (always full window dimensions, 1m deep for wall CSG)
+
+## Props
+
+The `WindowSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need geometry updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### WindowNode Schema
+
+The system processes `WindowNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique window identifier
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" default="[0, 0, 0]">
+  Center of the window in wall-local coordinates `[x, y, z]`
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" default="[0, 0, 0]">
+  Euler rotation in radians `[x, y, z]`
+</ParamField>
+
+<ParamField path="width" type="number" default="1.5">
+  Overall window width in meters
+</ParamField>
+
+<ParamField path="height" type="number" default="1.5">
+  Overall window height in meters
+</ParamField>
+
+<ParamField path="frameThickness" type="number" default="0.05">
+  Width of frame members in meters
+</ParamField>
+
+<ParamField path="frameDepth" type="number" default="0.07">
+  Depth of frame in meters (perpendicular to wall)
+</ParamField>
+
+<ParamField path="columnRatios" type="number[]" default="[1]">
+  Relative width proportions for columns (e.g., `[1, 1]` = two equal columns)
+</ParamField>
+
+<ParamField path="rowRatios" type="number[]" default="[1]">
+  Relative height proportions for rows (e.g., `[1, 2]` = bottom row twice as tall)
+</ParamField>
+
+<ParamField path="columnDividerThickness" type="number" default="0.03">
+  Thickness of vertical dividers in meters
+</ParamField>
+
+<ParamField path="rowDividerThickness" type="number" default="0.03">
+  Thickness of horizontal dividers in meters
+</ParamField>
+
+<ParamField path="sill" type="boolean" default="true">
+  Whether to show window sill
+</ParamField>
+
+<ParamField path="sillDepth" type="number" default="0.08">
+  Depth of sill protrusion in meters
+</ParamField>
+
+<ParamField path="sillThickness" type="number" default="0.03">
+  Thickness of sill in meters
+</ParamField>
+
+<ParamField path="parentId" type="string">
+  Parent wall ID
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+- **Wall System** (`WallSystem`): Applies CSG subtraction using window's cutout mesh
+
+## Window Geometry Details
+
+### Frame Construction
+
+The frame consists of four members:
+
+1. **Top bar**: Full width, `frameThickness` tall
+2. **Bottom bar**: Full width, `frameThickness` tall
+3. **Left post**: Inner height (to avoid corner overlap), `frameThickness` wide
+4. **Right post**: Inner height (to avoid corner overlap), `frameThickness` wide
+
+```typescript
+const innerW = width - 2 * frameThickness
+const innerH = height - 2 * frameThickness
+
+// Top / bottom — full width
+addBox(mesh, frameMaterial, width, frameThickness, frameDepth, 0,  height / 2 - frameThickness / 2, 0)
+addBox(mesh, frameMaterial, width, frameThickness, frameDepth, 0, -height / 2 + frameThickness / 2, 0)
+
+// Left / right — inner height
+addBox(mesh, frameMaterial, frameThickness, innerH, frameDepth, -width / 2 + frameThickness / 2, 0, 0)
+addBox(mesh, frameMaterial, frameThickness, innerH, frameDepth,  width / 2 - frameThickness / 2, 0, 0)
+```
+
+### Pane Grid Layout
+
+The inner area is divided by `columnRatios` and `rowRatios`:
+
+<Steps>
+<Step title="Calculate usable dimensions">
+Subtract divider thicknesses from inner dimensions:
+```typescript
+const usableW = innerW - (numCols - 1) * columnDividerThickness
+const usableH = innerH - (numRows - 1) * rowDividerThickness
+```
+</Step>
+
+<Step title="Distribute by ratios">
+Divide usable space proportionally:
+```typescript
+const colSum = columnRatios.reduce((a, b) => a + b, 0)
+const rowSum = rowRatios.reduce((a, b) => a + b, 0)
+const colWidths  = columnRatios.map(r => (r / colSum) * usableW)
+const rowHeights = rowRatios.map(r => (r / rowSum) * usableH)
+```
+</Step>
+
+<Step title="Calculate cell centers">
+Compute X and Y centers for each grid cell accounting for dividers.
+</Step>
+</Steps>
+
+### Divider Placement (window-system.tsx:133-150)
+
+**Column dividers** span full inner height:
+
+```typescript
+for (let c = 0; c < numCols - 1; c++) {
+  addBox(mesh, frameMaterial, columnDividerThickness, innerH, frameDepth, x, 0, 0)
+}
+```
+
+**Row dividers** are placed per column width to avoid overlapping column dividers:
+
+```typescript
+for (let r = 0; r < numRows - 1; r++) {
+  for (let c = 0; c < numCols; c++) {
+    addBox(mesh, frameMaterial, colWidths[c], rowDividerThickness, frameDepth, colXCenters[c], y, 0)
+  }
+}
+```
+
+### Glass Panes (window-system.tsx:152-158)
+
+Each grid cell gets a thin glass pane:
+
+```typescript
+const glassDepth = Math.max(0.004, frameDepth * 0.08)
+for (let c = 0; c < numCols; c++) {
+  for (let r = 0; r < numRows; r++) {
+    addBox(mesh, glassMaterial, colWidths[c], rowHeights[r], glassDepth, colXCenters[c], rowYCenters[r], 0)
+  }
+}
+```
+
+### Sill (window-system.tsx:160-166)
+
+Optional sill protrudes from the front face:
+
+```typescript
+if (sill) {
+  const sillW = width + sillDepth * 0.4  // slightly wider than frame
+  const sillZ = frameDepth / 2 + sillDepth / 2  // protrudes forward
+  addBox(mesh, frameMaterial, sillW, sillThickness, sillDepth, 0, -height / 2 - sillThickness / 2, sillZ)
+}
+```
+
+## CSG Cutouts
+
+The window creates a cutout in its parent wall using Constructive Solid Geometry:
+
+<Steps>
+<Step title="Create cutout mesh">
+Invisible mesh named `'cutout'` with full window dimensions (`width × height × 1.0m` deep).
+</Step>
+
+<Step title="Wall CSG subtraction">
+Parent wall system subtracts the cutout brush from wall geometry using `three-bvh-csg`.
+</Step>
+
+<Step title="Rebuild wall on window changes">
+Whenever a window is updated, its parent wall is marked dirty to trigger CSG recalculation.
+</Step>
+</Steps>
+
+```typescript
+// Create cutout for wall CSG (window-system.tsx:168-177)
+let cutout = mesh.getObjectByName('cutout') as THREE.Mesh | undefined
+if (!cutout) {
+  cutout = new THREE.Mesh()
+  cutout.name = 'cutout'
+  mesh.add(cutout)
+}
+cutout.geometry = new THREE.BoxGeometry(node.width, node.height, 1.0)
+cutout.visible = false
+```
+
+## Usage in Viewer
+
+```tsx
+import { WindowSystem } from '@pascal/core/systems/window/window-system'
+import { useScene } from '@pascal/core/store/use-scene'
+
+function createWindow() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const window = {
+    id: 'window_1',
+    type: 'window',
+    parentId: 'wall_1',
+    position: [2.5, 1.5, 0],
+    rotation: [0, 0, 0],
+    width: 1.5,
+    height: 1.5,
+    frameThickness: 0.05,
+    frameDepth: 0.07,
+    columnRatios: [1, 1],  // Two equal columns
+    rowRatios: [1],        // Single row
+    columnDividerThickness: 0.03,
+    rowDividerThickness: 0.03,
+    sill: true,
+    sillDepth: 0.08,
+    sillThickness: 0.03,
+  }
+  
+  addNode(window)
+  markDirty(window.id)
+}
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <WindowSystem />
+    </Canvas>
+  )
+}
+```
+
+The system automatically:
+- Monitors the `dirtyNodes` store
+- Updates windows when they're marked dirty
+- Triggers parent wall CSG updates
+
+## Common Window Configurations
+
+### Single-Hung Window
+
+```typescript
+const singleHung = {
+  columnRatios: [1],
+  rowRatios: [1, 1],  // Two equal rows (top/bottom sashes)
+  rowDividerThickness: 0.03,
+}
+```
+
+### Double-Hung Window
+
+```typescript
+const doubleHung = {
+  columnRatios: [1],
+  rowRatios: [1, 1],
+  rowDividerThickness: 0.025,  // Thinner meeting rail
+}
+```
+
+### Bay Window Center
+
+```typescript
+const bayCenter = {
+  columnRatios: [1, 1, 1],  // Three equal columns
+  rowRatios: [0.3, 0.7],    // Smaller top row (transom)
+  columnDividerThickness: 0.05,
+  rowDividerThickness: 0.03,
+}
+```
+
+### Picture Window
+
+```typescript
+const picture = {
+  columnRatios: [1],  // No divisions
+  rowRatios: [1],
+  width: 2.5,
+  height: 2.0,
+}
+```
+
+### Casement Pair
+
+```typescript
+const casementPair = {
+  columnRatios: [1, 1],  // Two equal casements
+  rowRatios: [1],
+  columnDividerThickness: 0.05,  // Center mullion
+}
+```
+
+## Materials
+
+The system uses three materials:
+
+```typescript
+const glassMaterial = new MeshStandardNodeMaterial({
+  color: 'lightblue',
+  roughness: 0.05,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 0.3,
+  side: DoubleSide,
+  depthWrite: false,
+})
+
+const frameMaterial = new MeshStandardNodeMaterial({
+  color: '#e8e8e8',  // Light gray for frame
+  roughness: 0.6,
+  metalness: 0,
+})
+
+const hitboxMaterial = new THREE.MeshBasicMaterial({
+  visible: false,  // Invisible root mesh for selection
+})
+```
+
+## Performance Notes
+
+- Only updates dirty windows (not all windows every frame)
+- Reuses shared material instances across all windows
+- Disposes old geometries to prevent memory leaks
+- Root mesh is invisible hitbox; all visuals are child meshes
+- Runs at priority `3` (after items, before wall CSG)
+
+## Coordinate System
+
+Windows use **wall-local coordinates**:
+
+- **X-axis**: Along wall length
+- **Y-axis**: Height (up)
+- **Z-axis**: Perpendicular to wall (through thickness)
+
+The window's `position` is its center in wall-local space.
+
+## Integration with Other Systems
+
+### Wall System
+
+Walls query child window nodes to:
+- Collect cutout meshes named `'cutout'`
+- Apply CSG subtraction to create window openings
+- Maintain wall structural integrity around openings
+
+### Scene Registry
+
+All window meshes are registered in `sceneRegistry.nodes` for quick lookup by ID and selection.
+
+## Related
+
+- [WallSystem](/api/systems/wall-system) - Applies CSG cutouts for windows
+- [DoorSystem](/api/systems/door-system) - Similar CSG-based opening system
+- [ItemSystem](/api/systems/item-system) - Can position window treatments

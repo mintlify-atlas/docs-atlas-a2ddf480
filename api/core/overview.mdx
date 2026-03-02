@@ -22,33 +22,36 @@ npm install @pascal-app/core
 ### Events
 
 - `emitter` - Event bus for scene interactions (based on mitt)
-- `eventSuffixes` - Available event types: `click`, `move`, `enter`, `leave`, `pointerdown`, `pointerup`, `context-menu`, `double-click`
+- `eventSuffixes` - Available event suffixes: `click`, `move`, `enter`, `leave`, `pointerdown`, `pointerup`, `context-menu`, `double-click`
 
 **Event Types:**
-- `BuildingEvent`
-- `CameraControlEvent`
-- `CeilingEvent`
-- `DoorEvent`
-- `EventSuffix`
-- `GridEvent`
-- `ItemEvent`
-- `LevelEvent`
-- `NodeEvent`
-- `RoofEvent`
-- `SiteEvent`
-- `SlabEvent`
-- `WallEvent`
-- `WindowEvent`
-- `ZoneEvent`
+- `BuildingEvent` - Building interaction events
+- `CameraControlEvent` - Camera control events
+- `CeilingEvent` - Ceiling interaction events
+- `DoorEvent` - Door interaction events
+- `EventSuffix` - Type for event suffix strings
+- `GridEvent` - Grid interaction events
+- `ItemEvent` - Item interaction events
+- `LevelEvent` - Level interaction events
+- `NodeEvent` - Generic node events
+- `RoofEvent` - Roof interaction events
+- `SiteEvent` - Site interaction events
+- `SlabEvent` - Slab interaction events
+- `WallEvent` - Wall interaction events
+- `WindowEvent` - Window interaction events
+- `ZoneEvent` - Zone interaction events
 
-### Hooks
+### Hooks & Registry
 
 - [`sceneRegistry`](/api/core/scene-registry) - Global registry mapping node IDs to Three.js Object3D instances
 - [`useRegistry`](/api/core/scene-registry) - React hook to register Three.js objects with the scene registry
+
+### Spatial Grid
+
 - [`spatialGridManager`](/api/core/spatial-grid) - Singleton for spatial queries and collision detection
-- `useSpatialQuery` - Hook for querying spatial grid
-- `initSpatialGridSync` - Initialize spatial grid synchronization
-- `resolveLevelId` - Resolve level ID from a node
+- `useSpatialQuery` - Hook for querying spatial grid (floor, wall, ceiling placement)
+- `initSpatialGridSync` - Initialize spatial grid synchronization with scene store
+- `resolveLevelId` - Resolve level ID from any node by walking up the parent chain
 
 ### Schema
 
@@ -67,14 +70,16 @@ npm install @pascal-app/core
 - `WindowNode` - Window in wall
 - `DoorNode` - Door in wall
 
-**Utilities:**
-- `generateId` - Generate unique node IDs
+**Schema Utilities:**
+- `generateId` - Generate unique node IDs with prefix (e.g., `wall_abc123`)
+- `objectId` - Zod schema for object IDs with default generation
+- `nodeType` - Zod schema for node type literals
+- `Material` - Zod schema for material preset name references
+- `getScaledDimensions` - Get item dimensions with scale applied
+
+**Type Utilities:**
 - `BaseNode` - Base node schema
-- `Material` - Material schema
-- `nodeType` - Node type enum
-- `objectId` - Object ID schema
 - `CameraSchema` - Camera configuration schema
-- `getScaledDimensions` - Get dimensions with scale applied
 - `AnyNode` - Union type of all node types
 - `AnyNodeId` - Any node ID type
 - `AnyNodeType` - Any node type string
@@ -105,8 +110,11 @@ Systems are React components that run physics/validation logic each frame:
 
 ### Utilities
 
-- `isObject` - Type guard for objects
-- `pointInPolygon` - Point-in-polygon test (ray casting)
+**Type Guards:**
+- `isObject` - Type guard to check if value is a plain object (not null or array)
+
+**Geometry:**
+- `pointInPolygon` - Point-in-polygon test using ray casting algorithm
 
 ## Architecture
 
@@ -114,7 +122,7 @@ Systems are React components that run physics/validation logic each frame:
 
 The scene is a hierarchical tree structure:
 
-```
+```text
 SiteNode (root)
 └─ BuildingNode
    └─ LevelNode

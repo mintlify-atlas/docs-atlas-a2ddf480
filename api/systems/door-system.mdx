@@ -1,0 +1,441 @@
+---
+title: 'DoorSystem'
+description: 'React component that generates parametric door geometry with CSG cutouts in walls'
+---
+
+## Overview
+
+The `DoorSystem` is a React component that processes dirty door nodes and generates 3D door geometry. It supports:
+
+- **Parametric door geometry** with configurable segments (panels, glass, empty)
+- **CSG cutouts** in parent walls for door openings
+- **Commercial hardware** (door closers, panic bars)
+- **Multi-segment layouts** with independent column divisions per segment
+- **Threshold, handle, and hinge** customization
+
+The system runs in a `useFrame` hook at priority `3`, ensuring doors update after items and slabs but before wall CSG operations.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/door/door-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Monitor dirty nodes">
+The system watches the `dirtyNodes` set for nodes with `type === 'door'`.
+</Step>
+
+<Step title="Update door geometry">
+For each dirty door:
+- Generate new geometry from door parameters
+- Create frame members (left post, right post, head)
+- Build leaf segments (panels, glass, or empty)
+- Add hardware (handle, hinges, closer, panic bar)
+- Update the invisible cutout mesh for wall CSG
+</Step>
+
+<Step title="Mark parent wall dirty">
+Trigger parent wall rebuild so its CSG cutout reflects the updated door geometry.
+</Step>
+
+<Step title="Clear dirty flag">
+Once the mesh is updated, the node is removed from `dirtyNodes`.
+</Step>
+</Steps>
+
+### Geometry Generation
+
+The `updateDoorMesh()` function builds door geometry in these steps:
+
+1. **Create invisible hitbox** (root mesh for selection)
+2. **Build frame members** (left post, right post, head)
+3. **Add threshold** if enabled
+4. **Build leaf segments** with content padding border strips
+5. **Generate segment content** (panels with raised details, glass panes, or empty fill)
+6. **Add hardware** (handle, door closer, panic bar, hinges)
+7. **Update cutout mesh** (always full door dimensions, 1m deep for wall CSG)
+
+## Props
+
+The `DoorSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need geometry updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### DoorNode Schema
+
+The system processes `DoorNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique door identifier
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" default="[0, 0, 0]">
+  Center of the door in wall-local coordinates `[x, y, z]`
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" default="[0, 0, 0]">
+  Euler rotation in radians `[x, y, z]`
+</ParamField>
+
+<ParamField path="width" type="number" default="0.9">
+  Overall door width in meters
+</ParamField>
+
+<ParamField path="height" type="number" default="2.1">
+  Overall door height in meters
+</ParamField>
+
+<ParamField path="frameThickness" type="number" default="0.05">
+  Width of frame members in meters
+</ParamField>
+
+<ParamField path="frameDepth" type="number" default="0.07">
+  Depth of frame in meters (perpendicular to wall)
+</ParamField>
+
+<ParamField path="threshold" type="boolean" default="true">
+  Whether to show threshold at door base
+</ParamField>
+
+<ParamField path="thresholdHeight" type="number" default="0.02">
+  Height of threshold in meters
+</ParamField>
+
+<ParamField path="hingesSide" type="'left' | 'right'" default="'left'">
+  Which side the hinges are on
+</ParamField>
+
+<ParamField path="swingDirection" type="'inward' | 'outward'" default="'inward'">
+  Direction the door swings
+</ParamField>
+
+<ParamField path="segments" type="DoorSegment[]" required>
+  Array of segments stacked top to bottom, each defining its own column layout
+</ParamField>
+
+<ParamField path="handle" type="boolean" default="true">
+  Whether to show door handle
+</ParamField>
+
+<ParamField path="handleHeight" type="number" default="1.05">
+  Height of handle from floor in meters
+</ParamField>
+
+<ParamField path="handleSide" type="'left' | 'right'" default="'right'">
+  Which side the handle is on
+</ParamField>
+
+<ParamField path="contentPadding" type="[number, number]" default="[0.04, 0.04]">
+  Leaf inner margin `[x, y]` in meters
+</ParamField>
+
+<ParamField path="doorCloser" type="boolean" default="false">
+  Whether to show commercial door closer hardware
+</ParamField>
+
+<ParamField path="panicBar" type="boolean" default="false">
+  Whether to show panic bar (emergency exit hardware)
+</ParamField>
+
+<ParamField path="panicBarHeight" type="number" default="1.0">
+  Height of panic bar from floor in meters
+</ParamField>
+
+<ParamField path="parentId" type="string">
+  Parent wall ID
+</ParamField>
+
+### DoorSegment Schema
+
+Each segment in the `segments` array has:
+
+<ParamField path="type" type="'panel' | 'glass' | 'empty'" required>
+  - `'panel'`: Opaque with raised/recessed panel detail
+  - `'glass'`: Transparent glazed pane
+  - `'empty'`: Flat opaque fill
+</ParamField>
+
+<ParamField path="heightRatio" type="number" required>
+  Relative height proportion (segments are stacked top to bottom)
+</ParamField>
+
+<ParamField path="columnRatios" type="number[]" default="[1]">
+  Relative width proportions for columns within this segment
+</ParamField>
+
+<ParamField path="dividerThickness" type="number" default="0.03">
+  Thickness of column dividers in meters
+</ParamField>
+
+<ParamField path="panelDepth" type="number" default="0.01">
+  Depth of raised panel (positive = raised, negative = recessed)
+</ParamField>
+
+<ParamField path="panelInset" type="number" default="0.04">
+  Inset from segment edges to panel detail in meters
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+- **Wall System** (`WallSystem`): Applies CSG subtraction using door's cutout mesh
+
+## Door Geometry Details
+
+### Frame Construction
+
+The frame consists of three members:
+
+1. **Left post**: Full height, `frameThickness` wide
+2. **Right post**: Full height, `frameThickness` wide
+3. **Head (top bar)**: Full width, `frameThickness` tall
+
+No bottom frame bar exists — doors open to the floor.
+
+### Leaf Layout
+
+The leaf occupies the full opening with no bottom frame:
+
+```typescript
+const leafW = width - 2 * frameThickness
+const leafH = height - frameThickness  // only top frame
+const leafCenterY = -frameThickness / 2  // shifted down from door center
+```
+
+Content padding creates border strips, and segments fill the remaining area.
+
+### Segment Processing
+
+Segments are stacked top to bottom:
+
+<Steps>
+<Step title="Calculate segment heights">
+Divide content area by `heightRatio` proportions.
+</Step>
+
+<Step title="Divide into columns">
+For each segment, split width by `columnRatios` with `dividerThickness` spacing.
+</Step>
+
+<Step title="Generate content per column">
+- **Panel**: Opaque backing + raised panel detail
+- **Glass**: Thin transparent pane (no opaque backing)
+- **Empty**: Opaque backing only
+</Step>
+</Steps>
+
+### Hardware
+
+#### Hinges (door-system.tsx:227-241)
+
+Three knuckle-style hinges positioned:
+- Bottom: 0.25m from floor
+- Middle: Centered vertically
+- Top: 0.25m from top
+
+#### Handle (door-system.tsx:194-209)
+
+Lever-style handle with backplate and grip, positioned on front face at `handleHeight`.
+
+#### Door Closer (door-system.tsx:211-218)
+
+Commercial closer with body and arm, mounted at top of leaf.
+
+#### Panic Bar (door-system.tsx:220-224)
+
+Horizontal push bar at `panicBarHeight`, spanning 72% of leaf width.
+
+## CSG Cutouts
+
+The door creates a cutout in its parent wall using Constructive Solid Geometry:
+
+<Steps>
+<Step title="Create cutout mesh">
+Invisible mesh named `'cutout'` with full door dimensions (`width × height × 1.0m` deep).
+</Step>
+
+<Step title="Wall CSG subtraction">
+Parent wall system subtracts the cutout brush from wall geometry using `three-bvh-csg`.
+</Step>
+
+<Step title="Rebuild wall on door changes">
+Whenever a door is updated, its parent wall is marked dirty to trigger CSG recalculation.
+</Step>
+</Steps>
+
+```typescript
+// Create cutout for wall CSG (door-system.tsx:244-252)
+let cutout = mesh.getObjectByName('cutout') as THREE.Mesh | undefined
+if (!cutout) {
+  cutout = new THREE.Mesh()
+  cutout.name = 'cutout'
+  mesh.add(cutout)
+}
+cutout.geometry = new THREE.BoxGeometry(node.width, node.height, 1.0)
+cutout.visible = false
+```
+
+## Usage in Viewer
+
+```tsx
+import { DoorSystem } from '@pascal/core/systems/door/door-system'
+import { useScene } from '@pascal/core/store/use-scene'
+
+function createDoor() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const door = {
+    id: 'door_1',
+    type: 'door',
+    parentId: 'wall_1',
+    position: [2.5, 1.05, 0],
+    rotation: [0, 0, 0],
+    width: 0.9,
+    height: 2.1,
+    frameThickness: 0.05,
+    frameDepth: 0.07,
+    threshold: true,
+    thresholdHeight: 0.02,
+    hingesSide: 'left',
+    swingDirection: 'inward',
+    segments: [
+      {
+        type: 'glass',
+        heightRatio: 0.4,
+        columnRatios: [1],
+        dividerThickness: 0.03,
+      },
+      {
+        type: 'panel',
+        heightRatio: 0.6,
+        columnRatios: [1],
+        dividerThickness: 0.03,
+        panelDepth: 0.01,
+        panelInset: 0.04,
+      },
+    ],
+    handle: true,
+    handleHeight: 1.05,
+    handleSide: 'right',
+    contentPadding: [0.04, 0.04],
+    doorCloser: false,
+    panicBar: false,
+  }
+  
+  addNode(door)
+  markDirty(door.id)
+}
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <DoorSystem />
+    </Canvas>
+  )
+}
+```
+
+The system automatically:
+- Monitors the `dirtyNodes` store
+- Updates doors when they're marked dirty
+- Triggers parent wall CSG updates
+
+## Multi-Column Segments
+
+Each segment can have independent column divisions:
+
+```typescript
+const frenchDoor = {
+  segments: [
+    {
+      type: 'glass',
+      heightRatio: 1,
+      columnRatios: [1, 1],  // Two equal glass columns
+      dividerThickness: 0.03,
+    },
+  ],
+}
+
+const craftsman = {
+  segments: [
+    {
+      type: 'glass',
+      heightRatio: 0.5,
+      columnRatios: [1],  // Single glass top
+      dividerThickness: 0.03,
+    },
+    {
+      type: 'panel',
+      heightRatio: 0.5,
+      columnRatios: [1, 1, 1],  // Three panel columns
+      dividerThickness: 0.03,
+      panelDepth: 0.01,
+      panelInset: 0.04,
+    },
+  ],
+}
+```
+
+## Materials
+
+The system uses three materials:
+
+```typescript
+const baseMaterial = new MeshStandardNodeMaterial({
+  color: '#f2f0ed',  // Off-white for frame and panels
+  roughness: 0.5,
+  metalness: 0,
+})
+
+const glassMaterial = new MeshStandardNodeMaterial({
+  color: 'lightblue',
+  roughness: 0.05,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 0.35,
+  side: DoubleSide,
+  depthWrite: false,
+})
+
+const hitboxMaterial = new THREE.MeshBasicMaterial({
+  visible: false,  // Invisible root mesh for selection
+})
+```
+
+## Performance Notes
+
+- Only updates dirty doors (not all doors every frame)
+- Reuses shared material instances across all doors
+- Disposes old geometries to prevent memory leaks
+- Root mesh is invisible hitbox; all visuals are child meshes
+- Runs at priority `3` (after items, before wall CSG)
+
+## Coordinate System
+
+Doors use **wall-local coordinates**:
+
+- **X-axis**: Along wall length
+- **Y-axis**: Height (up)
+- **Z-axis**: Perpendicular to wall (through thickness)
+
+The door's `position` is its center, with `Y = height/2` so the base sits at floor level.
+
+## Related
+
+- [WallSystem](/api/systems/wall-system) - Applies CSG cutouts for doors
+- [WindowSystem](/api/systems/window-system) - Similar CSG-based opening system
+- [ItemSystem](/api/systems/item-system) - Positions door hardware items

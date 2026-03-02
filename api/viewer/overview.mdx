@@ -47,10 +47,13 @@ The package exports the following components and utilities:
 
 ### Utilities
 
+**Asset Resolution:**
 - `ASSETS_CDN_URL` - Base URL for asset CDN (`https://editor.pascal.app`)
-- `resolveAssetUrl(url)` - Async function to resolve asset URLs (handles `http://`, `https://`, `asset://`, and relative paths)
-- `resolveCdnUrl(url)` - Synchronous CDN URL resolver (for non-IndexedDB assets)
-- `snapLevelsToTruePositions()` - Utility to snap level positions for rendering/export
+- `resolveAssetUrl(url)` - Async function to resolve asset URLs (handles `http://`, `https://`, `asset://` from IndexedDB, and relative paths)
+- `resolveCdnUrl(url)` - Synchronous CDN URL resolver (for non-IndexedDB assets only)
+
+**Level Utilities:**
+- `snapLevelsToTruePositions()` - Snap all level Object3D to true stacked Y positions (returns restore function for reverting after render)
 
 ## Quick Start
 

@@ -1,0 +1,318 @@
+---
+title: "ScanNode"
+description: "Node representing a 3D scan or point cloud reference with position and opacity control"
+---
+
+## Overview
+
+The `ScanNode` represents a 3D scan or point cloud that can be loaded into the scene as a reference. This is useful for importing existing building scans, LiDAR data, or photogrammetry models to use as a basis for creating the building model.
+
+**Key features**:
+- Reference to 3D scan/point cloud asset via URL
+- Position, rotation, and scale transformations
+- Opacity control for overlay visualization
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const ScanNode = BaseNode.extend({
+  id: objectId('scan'),
+  type: nodeType('scan'),
+  url: z.string(),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  scale: z.number().default(1),
+  opacity: z.number().min(0).max(100).default(100),
+})
+
+type ScanNode = z.infer<typeof ScanNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/scan.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique scan identifier.
+  
+  **Format**: `scan_{randomString}`
+  
+  **Example**: `"scan_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"scan"`.
+  
+  **Default**: `"scan"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the scan.
+  
+  **Example**: `"Building LiDAR Scan"`, `"Ground Floor Point Cloud"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent node's ID (typically a Site or Building).
+  
+  **Example**: `"building_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls scan visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the scan.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the scan.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Scan-Specific Fields
+
+<ParamField path="url" type="string" required>
+  URL or path to the 3D scan/point cloud asset.
+  
+  **Example**: `"https://example.com/scans/building.ply"`, `"/assets/scan.e57"`
+  
+  Supported formats may include: PLY, E57, LAS, LAZ, PCD, or other point cloud formats.
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" required>
+  Position of the scan in 3D space.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[10, 0, 5]`
+  
+  This allows you to place the scan at a specific location in the scene.
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Rotation of the scan around X, Y, and Z axes in radians.
+  
+  **Format**: `[rx, ry, rz]` in radians
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[0, Math.PI / 2, 0]` (90° rotation around Y axis)
+  
+  This allows you to orient the scan to align with your building model.
+</ParamField>
+
+<ParamField path="scale" type="number" required>
+  Uniform scale factor for the scan.
+  
+  **Default**: `1`
+  
+  **Example**: `1.0` (original size), `0.5` (half size), `2.0` (double size)
+  
+  Useful for adjusting scan dimensions to match the scene coordinate system.
+</ParamField>
+
+<ParamField path="opacity" type="number" required>
+  Opacity of the scan visualization (0-100).
+  
+  **Default**: `100`
+  
+  **Range**: `0` (fully transparent) to `100` (fully opaque)
+  
+  **Example**: `50` (50% transparent), `100` (fully visible)
+  
+  Lower opacity values are useful for using the scan as a background reference while modeling.
+</ParamField>
+
+## Example
+
+```typescript
+import { ScanNode } from '@pascal/core/schema/nodes/scan'
+
+const scan: ScanNode = {
+  object: 'node',
+  id: 'scan_abc123',
+  type: 'scan',
+  name: 'Building Exterior Scan',
+  parentId: 'building_xyz789',
+  visible: true,
+  url: 'https://storage.example.com/scans/building_01.ply',
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  scale: 1.0,
+  opacity: 60,
+  metadata: {
+    captureDate: '2024-01-15',
+    scanner: 'Faro Focus3D',
+    pointCount: 125000000,
+  },
+}
+```
+
+## Usage
+
+### Creating a Basic Scan Reference
+
+```typescript
+import { ScanNode } from '@pascal/core/schema/nodes/scan'
+
+const scan = ScanNode.parse({
+  name: 'Ground Floor Scan',
+  url: '/assets/scans/ground_floor.ply',
+  opacity: 50, // Semi-transparent for reference
+})
+```
+
+### Creating a Positioned and Rotated Scan
+
+```typescript
+const positionedScan = ScanNode.parse({
+  name: 'Aligned Building Scan',
+  url: 'https://example.com/scans/building.e57',
+  position: [10, 0, 5],
+  rotation: [0, Math.PI / 4, 0], // 45° rotation around Y
+  scale: 1.0,
+  opacity: 70,
+})
+```
+
+### Creating a Scaled Scan
+
+```typescript
+const scaledScan = ScanNode.parse({
+  name: 'Adjusted LiDAR Scan',
+  url: '/scans/lidar_data.las',
+  scale: 0.001, // Convert from mm to m
+  opacity: 80,
+})
+```
+
+### Creating Multiple Scans for Different Floors
+
+```typescript
+const groundFloorScan = ScanNode.parse({
+  name: 'Ground Floor Scan',
+  parentId: 'level_ground',
+  url: '/scans/level_0.ply',
+  position: [0, 0, 0],
+  opacity: 50,
+})
+
+const firstFloorScan = ScanNode.parse({
+  name: 'First Floor Scan',
+  parentId: 'level_first',
+  url: '/scans/level_1.ply',
+  position: [0, 3, 0], // 3m above ground
+  opacity: 50,
+})
+```
+
+### Creating a High-Opacity Reference Scan
+
+```typescript
+const referenceScan = ScanNode.parse({
+  name: 'Reference Point Cloud',
+  url: 'https://storage.example.com/reference.pcd',
+  opacity: 100, // Fully opaque
+})
+```
+
+### Creating a Faint Background Scan
+
+```typescript
+const backgroundScan = ScanNode.parse({
+  name: 'Background Context',
+  url: '/scans/context.ply',
+  opacity: 20, // Very transparent, just for context
+})
+```
+
+## Common Use Cases
+
+### As-Built Documentation
+
+Load existing building scans to create accurate as-built models:
+
+```typescript
+const asBuiltScan = ScanNode.parse({
+  name: 'As-Built LiDAR',
+  url: '/scans/as_built.e57',
+  position: [0, 0, 0],
+  opacity: 60,
+  metadata: {
+    purpose: 'as-built documentation',
+    accuracy: '±5mm',
+  },
+})
+```
+
+### Renovation Projects
+
+Use scans as reference for renovation planning:
+
+```typescript
+const renovationScan = ScanNode.parse({
+  name: 'Existing Conditions',
+  url: '/scans/existing.ply',
+  opacity: 40, // Transparent to see new design on top
+  metadata: {
+    purpose: 'renovation reference',
+  },
+})
+```
+
+### Site Context
+
+Include site and surrounding area scans:
+
+```typescript
+const siteContextScan = ScanNode.parse({
+  name: 'Site Context Scan',
+  parentId: 'site_main',
+  url: '/scans/site_context.las',
+  opacity: 30,
+  metadata: {
+    extent: '100m radius',
+  },
+})
+```
+
+## Coordinate System
+
+Scans use 3D world coordinates:
+- X axis: horizontal (left-right)
+- Y axis: vertical (up-down)
+- Z axis: horizontal (front-back)
+- Rotation: Euler angles [rx, ry, rz] in radians
+- Scale: Uniform scaling factor
+
+## Supported Formats
+
+While the schema accepts any URL string, common point cloud formats include:
+- PLY (Polygon File Format)
+- E57 (ASTM standard for 3D imaging)
+- LAS/LAZ (LiDAR data format)
+- PCD (Point Cloud Data)
+- XYZ (ASCII point cloud)
+
+Check your viewer's documentation for supported formats.
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [GuideNode](/api/nodes/guide) - 2D reference images (similar concept)
+- [SiteNode](/api/nodes/site) - Typical parent for site-wide scans
+- [BuildingNode](/api/nodes/building) - Typical parent for building scans
