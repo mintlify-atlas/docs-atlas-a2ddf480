@@ -1,0 +1,108 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Pascal Editor",
+  "projectDescription": "A TypeScript SDK for building 3D architectural editors with React Three Fiber and WebGPU",
+  "theme": "palm",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "installation", "quickstart"]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/nodes",
+              "concepts/scene-state",
+              "concepts/systems",
+              "concepts/events"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-nodes",
+              "guides/custom-systems",
+              "guides/event-handling",
+              "guides/spatial-queries"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Package",
+            "pages": [
+              "api/core/overview",
+              "api/core/scene-store",
+              "api/core/scene-registry",
+              "api/core/spatial-grid"
+            ]
+          },
+          {
+            "group": "Node Schemas",
+            "pages": [
+              "api/nodes/base",
+              "api/nodes/site",
+              "api/nodes/building",
+              "api/nodes/level",
+              "api/nodes/wall",
+              "api/nodes/slab",
+              "api/nodes/zone",
+              "api/nodes/item"
+            ]
+          },
+          {
+            "group": "Systems",
+            "pages": [
+              "api/systems/wall-system",
+              "api/systems/slab-system",
+              "api/systems/ceiling-system",
+              "api/systems/item-system"
+            ]
+          },
+          {
+            "group": "Viewer Package",
+            "pages": [
+              "api/viewer/overview",
+              "api/viewer/viewer-component",
+              "api/viewer/viewer-store"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "3D building editor with React Three Fiber and WebGPU rendering",
+    "Node-based scene graph with hierarchical relationships (Site → Building → Level → Walls/Slabs/Zones)",
+    "Real-time geometry generation with CSG operations for walls, doors, and windows",
+    "Zustand state management with undo/redo and IndexedDB persistence",
+    "Event-driven architecture with typed event bus for inter-component communication",
+    "Spatial grid manager for collision detection and placement validation",
+    "Modular system architecture for custom geometry and behavior extensions"
+  ],
+  "publicApiSurface": [
+    "useScene - Scene state store with CRUD operations for nodes",
+    "useViewer - Viewer state store for selection and display modes",
+    "sceneRegistry - Registry mapping node IDs to Three.js objects",
+    "useRegistry - Hook for registering 3D objects with the scene registry",
+    "spatialGridManager - Collision detection and placement validation",
+    "emitter - Typed event bus for node interactions",
+    "WallSystem - Wall geometry generation with mitering and CSG cutouts",
+    "SlabSystem - Floor geometry generation from polygons",
+    "CeilingSystem - Ceiling geometry generation",
+    "ItemSystem - Item positioning on walls, ceilings, and floors",
+    "Viewer - Main 3D viewer React component",
+    "Node schemas (BaseNode, SiteNode, BuildingNode, LevelNode, WallNode, SlabNode, ZoneNode, ItemNode)"
+  ]
+}
