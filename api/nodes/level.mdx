@@ -1,0 +1,266 @@
+---
+title: "LevelNode"
+description: "Node representing a floor level in a building with walls, slabs, and zones"
+---
+
+## Overview
+
+The `LevelNode` represents a single floor or level within a building. It contains walls, slabs (floors), zones (rooms), ceilings, roofs, scans, and guides.
+
+**Key features**:
+- Represents a single floor in a building
+- Contains walls, slabs, zones, and other architectural elements
+- Has a level number for vertical positioning
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+import { WallNode } from './wall'
+import { ZoneNode } from './zone'
+import { SlabNode } from './slab'
+import { CeilingNode } from './ceiling'
+import { RoofNode } from './roof'
+import { ScanNode } from './scan'
+import { GuideNode } from './guide'
+
+const LevelNode = BaseNode.extend({
+  id: objectId('level'),
+  type: nodeType('level'),
+  children: z.array(
+    z.union([
+      WallNode.shape.id,
+      ZoneNode.shape.id,
+      SlabNode.shape.id,
+      CeilingNode.shape.id,
+      RoofNode.shape.id,
+      ScanNode.shape.id,
+      GuideNode.shape.id,
+    ])
+  ).default([]),
+  level: z.number().default(0),
+})
+
+type LevelNode = z.infer<typeof LevelNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/level.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique level identifier.
+  
+  **Format**: `level_{randomString}`
+  
+  **Example**: `"level_m1n2o3p4q5r6s7t8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"level"`.
+  
+  **Default**: `"level"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the level.
+  
+  **Example**: `"Ground Floor"`, `"First Floor"`, `"Basement"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent building's ID.
+  
+  **Example**: `"building_xyz789"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls level visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the level.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the level.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Level-Specific Fields
+
+<ParamField path="level" type="number" required>
+  The level number indicating the vertical position in the building.
+  
+  **Default**: `0` (ground floor)
+  
+  **Examples**:
+  - `-1` for basement
+  - `0` for ground floor
+  - `1` for first floor
+  - `2` for second floor
+  
+  This number is used to calculate the actual elevation of the level in the 3D scene.
+</ParamField>
+
+<ParamField path="children" type="Array<string>" required>
+  Array of child node IDs belonging to this level.
+  
+  **Default**: `[]`
+  
+  **Valid child types**:
+  - `WallNode.shape.id` - Wall elements
+  - `ZoneNode.shape.id` - Room/zone definitions
+  - `SlabNode.shape.id` - Floor slabs
+  - `CeilingNode.shape.id` - Ceiling elements
+  - `RoofNode.shape.id` - Roof elements
+  - `ScanNode.shape.id` - 3D scan data
+  - `GuideNode.shape.id` - Construction guides
+  
+  **Example**: `["wall_aaa111", "wall_bbb222", "slab_ccc333", "zone_ddd444"]`
+</ParamField>
+
+## Example
+
+```typescript
+import { LevelNode } from '@pascal/core/schema/nodes/level'
+
+const level: LevelNode = {
+  object: 'node',
+  id: 'level_abc123',
+  type: 'level',
+  name: 'Ground Floor',
+  parentId: 'building_xyz789',
+  visible: true,
+  level: 0,
+  children: [
+    'wall_001',
+    'wall_002',
+    'wall_003',
+    'slab_floor',
+    'zone_living_room',
+    'zone_kitchen',
+  ],
+  metadata: {
+    floorHeight: 3.0, // meters
+    area: 120.5, // square meters
+  },
+}
+```
+
+## Usage
+
+### Creating a Level
+
+```typescript
+import { LevelNode } from '@pascal/core/schema/nodes/level'
+
+// Ground floor
+const groundFloor = LevelNode.parse({
+  name: 'Ground Floor',
+  level: 0,
+})
+
+// First floor
+const firstFloor = LevelNode.parse({
+  name: 'First Floor',
+  level: 1,
+})
+
+// Basement
+const basement = LevelNode.parse({
+  name: 'Basement',
+  level: -1,
+})
+```
+
+### Adding Elements to a Level
+
+```typescript
+import { WallNode } from '@pascal/core/schema/nodes/wall'
+import { SlabNode } from '@pascal/core/schema/nodes/slab'
+import { ZoneNode } from '@pascal/core/schema/nodes/zone'
+
+// Create architectural elements
+const wall1 = WallNode.parse({
+  start: [0, 0],
+  end: [10, 0],
+})
+
+const floor = SlabNode.parse({
+  polygon: [
+    [0, 0],
+    [10, 0],
+    [10, 8],
+    [0, 8],
+  ],
+})
+
+const livingRoom = ZoneNode.parse({
+  name: 'Living Room',
+  polygon: [
+    [0, 0],
+    [6, 0],
+    [6, 8],
+    [0, 8],
+  ],
+})
+
+// Add to level
+const level = LevelNode.parse({
+  name: 'Ground Floor',
+  level: 0,
+  children: [wall1.id, floor.id, livingRoom.id],
+})
+```
+
+### Multi-Story Building
+
+```typescript
+const levels = [
+  LevelNode.parse({ name: 'Basement', level: -1 }),
+  LevelNode.parse({ name: 'Ground Floor', level: 0 }),
+  LevelNode.parse({ name: 'First Floor', level: 1 }),
+  LevelNode.parse({ name: 'Second Floor', level: 2 }),
+  LevelNode.parse({ name: 'Roof', level: 3 }),
+]
+```
+
+## Coordinate System
+
+Level elements use the building's local coordinate system:
+- The level number determines vertical (Y) elevation
+- Walls, slabs, and zones use 2D coordinates in the XZ plane
+- The Y coordinate is typically implied by the level number
+
+## Hierarchy
+
+```
+BuildingNode
+└── LevelNode (level: 0)
+    ├── WallNode
+    │   └── ItemNode (wall-mounted items)
+    ├── WallNode
+    ├── SlabNode (floor)
+    ├── CeilingNode
+    ├── ZoneNode (Living Room)
+    ├── ZoneNode (Kitchen)
+    ├── ScanNode (3D scan data)
+    └── GuideNode (construction guides)
+```
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [BuildingNode](/api/nodes/building) - Parent node containing levels
+- [WallNode](/api/nodes/wall) - Walls within a level
+- [SlabNode](/api/nodes/slab) - Floor slabs within a level
+- [ZoneNode](/api/nodes/zone) - Zones/rooms within a level

@@ -1,0 +1,553 @@
+---
+title: Spatial Queries
+description: Validate placement and perform collision detection using the spatial grid system
+---
+
+The spatial grid system provides efficient collision detection and placement validation for your 3D scene. It tracks items, walls, slabs, and ceilings in optimized spatial data structures.
+
+## Understanding the Spatial Grid
+
+The `spatialGridManager` is a singleton that maintains spatial indices for:
+- **Floor items** - Items placed on the floor/slabs
+- **Wall items** - Items attached to walls
+- **Ceiling items** - Items attached to ceilings
+- **Slabs** - Floor polygons with elevation data
+- **Walls** - Wall segments for attachment validation
+
+<Note>
+The spatial grid is automatically synchronized with the scene state. You don't need to manually update it when creating or moving nodes.
+</Note>
+
+## Importing the Spatial Grid Manager
+
+```typescript
+import { spatialGridManager } from '@pascal-app/core'
+```
+
+## Placement Validation
+
+### Floor Placement
+
+Validate if an item can be placed on the floor without collisions:
+
+<Steps>
+  <Step title="Get the current level ID">
+    ```typescript
+    import { useViewer } from '@pascal-app/viewer'
+
+    const levelId = useViewer.getState().selection.levelId
+    ```
+  </Step>
+
+  <Step title="Call canPlaceOnFloor">
+    ```typescript
+    import { spatialGridManager } from '@pascal-app/core'
+
+    const canPlace = spatialGridManager.canPlaceOnFloor(
+      levelId,
+      [2.5, 0, 2.0],        // Position [x, y, z]
+      [1.0, 0.8, 0.5],      // Dimensions [width, height, depth]
+      [0, Math.PI / 4, 0],  // Rotation [x, y, z]
+      ['item_abc123']       // Optional: IDs to ignore (e.g., item being moved)
+    )
+
+    if (canPlace.valid) {
+      // Safe to place item
+      createItem()
+    } else {
+      // Collision detected
+      console.log('Conflicts with:', canPlace.conflictIds)
+    }
+    ```
+  </Step>
+</Steps>
+
+**Return value:**
+```typescript
+{
+  valid: boolean,        // Whether placement is valid
+  conflictIds: string[]  // IDs of conflicting items
+}
+```
+
+<Tip>
+Use the `ignoreIds` parameter when validating movement of an existing item to avoid self-collision.
+</Tip>
+
+### Wall Placement
+
+Validate if an item can be placed on a wall:
+
+```typescript
+const result = spatialGridManager.canPlaceOnWall(
+  levelId,          // Level containing the wall
+  wallId,           // Wall ID to attach to
+  2.5,              // localX: distance from wall start point (meters)
+  1.2,              // localY: height from floor (meters)
+  [1.2, 0.7, 0.1],  // Item dimensions [width, height, depth]
+  'wall-side',      // 'wall' (both sides) or 'wall-side' (one side)
+  'front',          // 'front' or 'back' (for wall-side items)
+  ['item_xyz']      // Optional: IDs to ignore
+)
+
+if (result.valid) {
+  // Create wall-attached item
+  const item = ItemNode.parse({
+    position: [2.5, 1.2, 0],
+    side: 'front',
+    asset: { ...asset, attachTo: 'wall-side' },
+  })
+  useScene.getState().createNode(item, wallId)
+} else {
+  console.log('Wall placement conflicts:', result.conflictIds)
+}
+```
+
+**Parameters explained:**
+- `localX` - Position along the wall from its start point
+- `localY` - Height above the floor
+- `attachType`:
+  - `'wall'` - Item spans both sides (requires both sides free)
+  - `'wall-side'` - Item on one side only (e.g., wall-mounted TV)
+- `side` - Which wall side for `'wall-side'` items
+
+### Ceiling Placement
+
+Validate if an item can be placed on a ceiling:
+
+```typescript
+const result = spatialGridManager.canPlaceOnCeiling(
+  ceilingId,
+  [2.5, 2.5, 2.0],      // Position in ceiling-local coordinates
+  [0.6, 0.2, 0.6],      // Dimensions
+  [0, 0, 0],            // Rotation
+  []                    // IDs to ignore
+)
+
+if (result.valid) {
+  // Place ceiling item (e.g., light fixture)
+  const light = ItemNode.parse({
+    position: [2.5, 2.5, 2.0],
+    asset: { ...lightAsset, attachTo: 'ceiling' },
+  })
+  useScene.getState().createNode(light, ceilingId)
+}
+```
+
+<Note>
+The ceiling placement check validates:
+1. The item footprint is within the ceiling polygon
+2. The item is not in a ceiling hole
+3. No collision with other ceiling items
+</Note>
+
+## Elevation Queries
+
+### Get Slab Elevation at Point
+
+Find the floor elevation at a specific (x, z) coordinate:
+
+```typescript
+const elevation = spatialGridManager.getSlabElevationAt(
+  levelId,
+  2.5,  // x coordinate
+  3.0   // z coordinate
+)
+
+console.log('Floor elevation:', elevation) // e.g., 0.05 meters
+```
+
+**How it works:**
+- Returns the highest slab elevation if the point is inside a slab polygon
+- Returns `0` if the point is not on any slab
+- Respects holes in slabs (returns `0` if point is in a hole)
+
+### Get Slab Elevation for Item
+
+Find the slab elevation for an item based on its full footprint:
+
+```typescript
+const elevation = spatialGridManager.getSlabElevationForItem(
+  levelId,
+  [2.5, 0, 3.0],        // Item position
+  [1.0, 0.8, 0.5],      // Item dimensions
+  [0, Math.PI / 4, 0]   // Item rotation
+)
+
+// Use elevation to position item correctly
+item.position[1] = elevation
+```
+
+**Use case:** This is used by the ItemSystem to automatically elevate floor items to sit on slabs:
+
+```typescript
+// From the ItemSystem source
+const slabElevation = spatialGridManager.getSlabElevationForItem(
+  levelId,
+  item.position,
+  getScaledDimensions(item),
+  item.rotation,
+)
+mesh.position.y = slabElevation + item.position[1]
+```
+
+### Get Slab Elevation for Wall
+
+Find the slab elevation for a wall segment:
+
+```typescript
+const elevation = spatialGridManager.getSlabElevationForWall(
+  levelId,
+  [0, 0],     // Wall start [x, z]
+  [5, 0]      // Wall end [x, z]
+)
+
+console.log('Wall sits on slab at elevation:', elevation)
+```
+
+<Tip>
+This is useful for elevating walls when they sit on raised slabs or platforms.
+</Tip>
+
+## Collision Detection Workflow
+
+Here's a complete example of validating item placement with real-time feedback:
+
+<Steps>
+  <Step title="Track mouse position">
+    ```typescript
+    import { emitter, type GridEvent } from '@pascal-app/core'
+    import { useState } from 'react'
+
+    const [cursorPosition, setCursorPosition] = useState<[number, number, number] | null>(null)
+
+    useEffect(() => {
+      const handleGridMove = (event: GridEvent) => {
+        setCursorPosition(event.position)
+      }
+
+      emitter.on('grid:move', handleGridMove)
+      return () => emitter.off('grid:move', handleGridMove)
+    }, [])
+    ```
+  </Step>
+
+  <Step title="Validate placement in real-time">
+    ```typescript
+    import { spatialGridManager } from '@pascal-app/core'
+
+    const [isValidPlacement, setIsValidPlacement] = useState(true)
+
+    useEffect(() => {
+      if (!cursorPosition) return
+
+      const levelId = useViewer.getState().selection.levelId
+      const result = spatialGridManager.canPlaceOnFloor(
+        levelId,
+        cursorPosition,
+        assetDimensions,
+        [0, rotation, 0],
+        [] // No IDs to ignore
+      )
+
+      setIsValidPlacement(result.valid)
+    }, [cursorPosition, rotation])
+    ```
+  </Step>
+
+  <Step title="Visualize validity">
+    ```typescript
+    // Render a preview item with different materials based on validity
+    <mesh position={cursorPosition}>
+      <boxGeometry args={assetDimensions} />
+      <meshStandardMaterial
+        color={isValidPlacement ? 0x00ff00 : 0xff0000}
+        transparent
+        opacity={0.5}
+      />
+    </mesh>
+    ```
+  </Step>
+
+  <Step title="Place item on click">
+    ```typescript
+    useEffect(() => {
+      const handleGridClick = (event: GridEvent) => {
+        if (!isValidPlacement) {
+          console.warn('Cannot place item: collision detected')
+          return
+        }
+
+        const item = ItemNode.parse({
+          position: event.position,
+          rotation: [0, rotation, 0],
+          asset: selectedAsset,
+        })
+
+        const levelId = useViewer.getState().selection.levelId
+        useScene.getState().createNode(item, levelId)
+      }
+
+      emitter.on('grid:click', handleGridClick)
+      return () => emitter.off('grid:click', handleGridClick)
+    }, [isValidPlacement, rotation, selectedAsset])
+    ```
+  </Step>
+</Steps>
+
+## Advanced Use Cases
+
+### Finding Available Space
+
+Iterate through positions to find the first available spot:
+
+```typescript
+function findAvailablePosition(
+  levelId: string,
+  dimensions: [number, number, number],
+  searchArea: { minX: number; maxX: number; minZ: number; maxZ: number },
+  step = 0.5
+): [number, number, number] | null {
+  for (let x = searchArea.minX; x <= searchArea.maxX; x += step) {
+    for (let z = searchArea.minZ; z <= searchArea.maxZ; z += step) {
+      const result = spatialGridManager.canPlaceOnFloor(
+        levelId,
+        [x, 0, z],
+        dimensions,
+        [0, 0, 0],
+        []
+      )
+
+      if (result.valid) {
+        return [x, 0, z]
+      }
+    }
+  }
+
+  return null // No available position found
+}
+```
+
+### Snapping to Walls
+
+Find the nearest valid wall attachment point:
+
+```typescript
+import { useScene } from '@pascal-app/core'
+
+function findNearestWallPosition(
+  levelId: string,
+  targetPosition: [number, number, number],
+  itemDimensions: [number, number, number]
+): { wallId: string; localX: number; localY: number } | null {
+  const nodes = useScene.getState().nodes
+  const level = nodes[levelId]
+  if (!level || level.type !== 'level') return null
+
+  let closestWall: { wallId: string; localX: number; localY: number; distance: number } | null = null
+
+  // Check each wall in the level
+  for (const wallId of level.children) {
+    const wall = nodes[wallId]
+    if (!wall || wall.type !== 'wall') continue
+
+    // Project target position onto wall
+    const wallVec = {
+      x: wall.end[0] - wall.start[0],
+      z: wall.end[1] - wall.start[1],
+    }
+    const wallLength = Math.sqrt(wallVec.x ** 2 + wallVec.z ** 2)
+
+    const toTarget = {
+      x: targetPosition[0] - wall.start[0],
+      z: targetPosition[2] - wall.start[1],
+    }
+
+    // Parametric position along wall (0-1)
+    const t = (toTarget.x * wallVec.x + toTarget.z * wallVec.z) / (wallLength ** 2)
+    const clampedT = Math.max(0, Math.min(1, t))
+    const localX = clampedT * wallLength
+
+    // Check if position is valid
+    const result = spatialGridManager.canPlaceOnWall(
+      levelId,
+      wallId,
+      localX,
+      targetPosition[1],
+      itemDimensions,
+      'wall-side',
+      'front',
+      []
+    )
+
+    if (result.valid) {
+      // Calculate distance from target to wall position
+      const wallX = wall.start[0] + clampedT * wallVec.x
+      const wallZ = wall.start[1] + clampedT * wallVec.z
+      const distance = Math.sqrt(
+        (targetPosition[0] - wallX) ** 2 +
+        (targetPosition[2] - wallZ) ** 2
+      )
+
+      if (!closestWall || distance < closestWall.distance) {
+        closestWall = {
+          wallId,
+          localX,
+          localY: targetPosition[1],
+          distance,
+        }
+      }
+    }
+  }
+
+  return closestWall
+    ? { wallId: closestWall.wallId, localX: closestWall.localX, localY: closestWall.localY }
+    : null
+}
+```
+
+### Checking Item Overlaps
+
+Find all items that overlap with a given area:
+
+```typescript
+function getOverlappingItems(
+  levelId: string,
+  position: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number]
+): string[] {
+  const result = spatialGridManager.canPlaceOnFloor(
+    levelId,
+    position,
+    dimensions,
+    rotation,
+    [] // Don't ignore any items
+  )
+
+  return result.conflictIds
+}
+
+// Usage: Clear an area by deleting overlapping items
+const overlapping = getOverlappingItems(levelId, [5, 0, 5], [2, 2, 2], [0, 0, 0])
+overlapping.forEach(itemId => {
+  useScene.getState().deleteNode(itemId)
+})
+```
+
+## Performance Considerations
+
+### Spatial Grid Cell Size
+
+The spatial grid divides space into cells for efficient lookup. The default cell size is `0.5` meters:
+
+```typescript
+// The grid is optimized for typical furniture-sized objects
+// Cell size balances memory usage vs. query performance
+const manager = new SpatialGridManager(0.5) // 0.5m cells
+```
+
+<Tip>
+The cell size is automatically configured. You don't need to adjust it for typical use cases.
+</Tip>
+
+### Efficient Queries
+
+```typescript
+// Good: Single query
+const canPlace = spatialGridManager.canPlaceOnFloor(levelId, pos, dims, rot)
+
+// Bad: Multiple unnecessary queries
+for (let i = 0; i < 100; i++) {
+  spatialGridManager.canPlaceOnFloor(levelId, pos, dims, rot) // Wasteful
+}
+```
+
+### Batch Operations
+
+When placing multiple items, validate all positions first:
+
+```typescript
+const positions = generateGridPositions(10, 10)
+const validPositions = positions.filter(pos => {
+  return spatialGridManager.canPlaceOnFloor(
+    levelId,
+    pos,
+    dimensions,
+    [0, 0, 0],
+    []
+  ).valid
+})
+
+// Create items at all valid positions
+const items = validPositions.map(pos =>
+  ItemNode.parse({ position: pos, asset })
+)
+useScene.getState().createNodes(
+  items.map(item => ({ node: item, parentId: levelId }))
+)
+```
+
+## Best Practices
+
+### Always Validate Before Creating
+
+```typescript
+// Good
+const result = spatialGridManager.canPlaceOnFloor(levelId, pos, dims, rot)
+if (result.valid) {
+  useScene.getState().createNode(item, levelId)
+} else {
+  showError('Cannot place item: collision detected')
+}
+
+// Bad: Create without validation
+useScene.getState().createNode(item, levelId) // May overlap!
+```
+
+### Use Scaled Dimensions
+
+```typescript
+import { getScaledDimensions } from '@pascal-app/core'
+
+// Good: Account for item scale
+const scaledDims = getScaledDimensions(item)
+const result = spatialGridManager.canPlaceOnFloor(levelId, pos, scaledDims, rot)
+
+// Bad: Use base dimensions
+const result = spatialGridManager.canPlaceOnFloor(
+  levelId,
+  pos,
+  item.asset.dimensions, // Wrong if item is scaled!
+  rot
+)
+```
+
+<Warning>
+Always use `getScaledDimensions()` when querying the spatial grid to account for item scaling.
+</Warning>
+
+### Ignore Self in Movement Validation
+
+```typescript
+// When moving an item, ignore its current position
+const currentItemId = 'item_abc123'
+const result = spatialGridManager.canPlaceOnFloor(
+  levelId,
+  newPosition,
+  dimensions,
+  rotation,
+  [currentItemId] // Ignore self
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Nodes" icon="cube" href="/guides/creating-nodes">
+    Create validated nodes using spatial queries
+  </Card>
+  <Card title="Event Handling" icon="bolt" href="/guides/event-handling">
+    Use spatial queries in event handlers
+  </Card>
+</CardGroup>

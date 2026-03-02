@@ -1,0 +1,206 @@
+---
+title: 'WallSystem'
+description: 'React component that manages wall geometry generation with automatic mitering and CSG cutouts'
+---
+
+## Overview
+
+The `WallSystem` is a React component that processes dirty wall nodes and generates 3D geometry with:
+
+- **Automatic mitering** at wall junctions (L-joints, T-joints, corners)
+- **CSG cutouts** for doors and windows using three-bvh-csg
+- **Level-aware processing** with slab elevation support
+- **Adjacent wall updates** when walls share junctions
+
+The system runs in a `useFrame` hook at priority `4`, ensuring walls update after items and slabs.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/wall/wall-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Collect dirty walls by level">
+The system groups dirty wall nodes by their parent `levelId` to process walls on the same floor together.
+</Step>
+
+<Step title="Calculate miter data">
+For each level with dirty walls, the system calls `calculateLevelMiters()` to compute junction intersections for all walls on that level.
+</Step>
+
+<Step title="Update dirty walls">
+Each dirty wall gets new geometry via `updateWallGeometry()`, which:
+- Retrieves slab elevation from the spatial grid
+- Collects child nodes (doors, windows)
+- Generates extruded wall geometry with mitering
+- Applies CSG subtraction for cutouts
+- Updates the mesh and collision mesh
+</Step>
+
+<Step title="Update adjacent walls">
+Walls that share junctions with dirty walls also get updated to maintain consistent mitering.
+</Step>
+</Steps>
+
+### Geometry Generation
+
+The `generateExtrudedWall()` function builds wall geometry in these steps:
+
+1. **Build polygon in world coordinates** using junction miter data
+2. **Transform to wall-local coordinates** (x along wall, z perpendicular)
+3. **Create THREE.Shape** and extrude along height
+4. **Rotate geometry** so extrusion becomes vertical (Y-axis)
+5. **Apply CSG subtraction** for door/window cutouts
+
+## Props
+
+The `WallSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need geometry updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### WallNode Schema
+
+The system processes `WallNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique wall identifier
+</ParamField>
+
+<ParamField path="start" type="[number, number]" required>
+  Start point in level coordinates `[x, z]`
+</ParamField>
+
+<ParamField path="end" type="[number, number]" required>
+  End point in level coordinates `[x, z]`
+</ParamField>
+
+<ParamField path="thickness" type="number" default="0.1">
+  Wall thickness in meters
+</ParamField>
+
+<ParamField path="height" type="number" default="2.5">
+  Wall height in meters
+</ParamField>
+
+<ParamField path="parentId" type="string">
+  Parent level ID
+</ParamField>
+
+<ParamField path="children" type="string[]">
+  Child item IDs (doors, windows)
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+- **Spatial Grid Manager** (`spatialGridManager`): Provides slab elevation data
+- **Wall Mitering** (`wall-mitering.ts`): Calculates junction intersections
+
+## Mitering Algorithm
+
+The mitering system handles complex wall intersections:
+
+### Junction Detection
+
+```typescript
+interface Junction {
+  meetingPoint: Point2D
+  connectedWalls: Array<{
+    wall: WallNode
+    endType: 'start' | 'end' | 'passthrough'
+  }>
+}
+```
+
+The algorithm detects:
+- **Corner junctions**: Two or more walls meeting at endpoints
+- **T-junctions**: A wall endpoint touching another wall's segment
+
+### Miter Calculation
+
+For each junction:
+1. Sort walls by outgoing angle
+2. Compute left and right edge lines for each wall (offset by `thickness/2`)
+3. Intersect adjacent wall edges to find miter points
+4. Build polygon with miter points at junctions and center vertices for clean fans
+
+See `~/workspace/source/packages/core/src/systems/wall/wall-mitering.ts` for implementation.
+
+## CSG Cutouts
+
+Doors and windows create cutouts using Constructive Solid Geometry:
+
+<Steps>
+<Step title="Find cutout meshes">
+Child nodes with a mesh named `'cutout'` are collected.
+</Step>
+
+<Step title="Create cutout brushes">
+Each cutout's bounding box is transformed to wall-local space and extruded through the wall thickness.
+</Step>
+
+<Step title="Subtract from wall">
+The CSG evaluator subtracts each cutout brush from the wall geometry using `SUBTRACTION` operation.
+</Step>
+</Steps>
+
+```typescript
+const csgEvaluator = new Evaluator()
+let resultBrush = wallBrush
+for (const cutoutBrush of cutoutBrushes) {
+  cutoutBrush.updateMatrixWorld()
+  const newResult = csgEvaluator.evaluate(
+    resultBrush,
+    cutoutBrush,
+    SUBTRACTION
+  )
+  resultBrush = newResult
+}
+```
+
+## Usage in Viewer
+
+```tsx
+import { WallSystem } from '@pascal/core/systems/wall/wall-system'
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <WallSystem />
+    </Canvas>
+  )
+}
+```
+
+The system automatically:
+- Monitors the `dirtyNodes` store
+- Updates walls when they're marked dirty
+- Maintains consistent geometry across all walls on a level
+
+## Performance Notes
+
+- Processes walls **level-by-level** to share miter calculations
+- Reuses a single `csgEvaluator` instance for all CSG operations
+- Only updates dirty walls and their immediate neighbors
+- Pre-computes BVH trees for efficient CSG operations
+- Disposes old geometries to prevent memory leaks
+
+## Related
+
+- [SlabSystem](/api/systems/slab-system) - Manages floor geometry
+- [CeilingSystem](/api/systems/ceiling-system) - Manages ceiling geometry
+- [ItemSystem](/api/systems/item-system) - Positions items on walls

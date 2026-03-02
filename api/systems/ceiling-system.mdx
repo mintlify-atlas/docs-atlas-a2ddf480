@@ -1,0 +1,241 @@
+---
+title: 'CeilingSystem'
+description: 'React component that generates flat ceiling geometry from polygons'
+---
+
+## Overview
+
+The `CeilingSystem` is a React component that processes dirty ceiling nodes and generates 3D ceiling geometry. It supports:
+
+- **Polygon-based geometry** matching room shapes
+- **Hole support** for ceiling cutouts (skylights, vents)
+- **Configurable height** positioning
+- **Grid mesh support** for ceiling tile visualization
+
+The system runs in a `useFrame` hook (default priority), ensuring ceilings update after core systems.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/ceiling/ceiling-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Monitor dirty nodes">
+The system watches the `dirtyNodes` set for nodes with `type === 'ceiling'`.
+</Step>
+
+<Step title="Update geometry">
+For each dirty ceiling:
+- Generate new flat geometry from the polygon
+- Add holes to the shape
+- Dispose old geometry and replace it
+- Update optional grid mesh (for ceiling tiles)
+</Step>
+
+<Step title="Position at height">
+Set mesh position to `ceiling.height - 0.01` (slight offset to avoid z-fighting with upper-level slabs).
+</Step>
+
+<Step title="Clear dirty flag">
+Once the mesh is updated, the node is removed from `dirtyNodes`.
+</Step>
+</Steps>
+
+### Geometry Generation
+
+The `generateCeilingGeometry()` function:
+
+1. **Create THREE.Shape** from polygon points
+2. **Add holes** from the `holes` array
+3. **Create ShapeGeometry** (flat, no extrusion)
+4. **Rotate** to lie flat in X-Z plane
+
+<Note>
+Unlike slabs, ceilings use `ShapeGeometry` instead of `ExtrudeGeometry` because they have zero thickness.
+</Note>
+
+## Props
+
+The `CeilingSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need geometry updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### CeilingNode Schema
+
+The system processes `CeilingNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique ceiling identifier
+</ParamField>
+
+<ParamField path="polygon" type="Array<[number, number]>" required>
+  Array of `[x, z]` coordinates defining the ceiling boundary in level coordinates
+</ParamField>
+
+<ParamField path="holes" type="Array<Array<[number, number]>>" default="[]">
+  Array of polygons representing holes in the ceiling (for skylights, vents, etc.)
+</ParamField>
+
+<ParamField path="height" type="number" default="2.5">
+  Ceiling height in meters (Y-axis position)
+</ParamField>
+
+<ParamField path="children" type="string[]">
+  Child item IDs (ceiling-attached items like lights, fans)
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+
+## Usage Example
+
+```tsx
+import { CeilingSystem } from '@pascal/core/systems/ceiling/ceiling-system'
+import { useScene } from '@pascal/core/store/use-scene'
+
+function createCeiling() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const ceiling = {
+    id: 'ceiling_1',
+    type: 'ceiling',
+    parentId: 'level_1',
+    polygon: [
+      [0, 0],
+      [5, 0],
+      [5, 5],
+      [0, 5],
+    ],
+    height: 2.5,
+    holes: [],
+    children: [],
+  }
+  
+  addNode(ceiling)
+  markDirty(ceiling.id)
+}
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <CeilingSystem />
+    </Canvas>
+  )
+}
+```
+
+## Coordinate System
+
+Ceilings use the **level coordinate system**:
+
+- **X-axis**: Horizontal (left-right)
+- **Y-axis**: Vertical (height)
+- **Z-axis**: Horizontal (forward-back)
+
+Polygon coordinates are in the `[x, z]` plane, and the ceiling is positioned at `height` on the Y-axis.
+
+## Holes
+
+Ceilings support multiple holes for architectural features:
+
+```typescript
+const ceilingWithHoles = {
+  id: 'ceiling_2',
+  type: 'ceiling',
+  polygon: [
+    [0, 0], [10, 0], [10, 10], [0, 10]
+  ],
+  holes: [
+    // Skylight
+    [
+      [2, 2], [4, 2], [4, 4], [2, 4]
+    ],
+    // Air vent
+    [
+      [6, 6], [7, 6], [7, 7], [6, 7]
+    ],
+  ],
+  height: 3.0,
+}
+```
+
+Holes are:
+- Defined as polygons in the same coordinate system
+- Automatically converted to THREE.Path and added to the shape
+- Cut completely through the ceiling (since it's flat)
+
+## Ceiling Grid Mesh
+
+The system supports an optional `'ceiling-grid'` mesh for visualizing ceiling tiles:
+
+```tsx
+// In your ceiling mesh component
+<mesh ref={meshRef} name={node.id}>
+  <primitive object={geometry} />
+  <meshStandardMaterial color="white" />
+  
+  {/* Optional grid for ceiling tiles */}
+  <mesh name="ceiling-grid">
+    <primitive object={geometry} />
+    <meshBasicMaterial 
+      color="#333" 
+      wireframe 
+      opacity={0.2} 
+      transparent 
+    />
+  </mesh>
+</mesh>
+```
+
+The system automatically updates both the main mesh and the grid mesh when geometry changes.
+
+## Height Positioning
+
+Ceilings are positioned at:
+
+```typescript
+mesh.position.y = (node.height ?? 2.5) - 0.01
+```
+
+The `-0.01` offset prevents z-fighting with upper-level slabs that might be at the same height.
+
+## Performance Notes
+
+- Only updates dirty ceilings (not all ceilings every frame)
+- Disposes old geometry before creating new geometry
+- Uses flat `ShapeGeometry` instead of extruded geometry for efficiency
+- Updates both main mesh and grid mesh in a single pass
+
+## Integration with Other Systems
+
+### Item System
+
+Ceiling-attached items (lights, fans) use the ceiling node to:
+- Position at correct height
+- Orient downward
+- Parent to the ceiling in the scene graph
+
+### Wall System
+
+Walls and ceilings often share the same polygon coordinates to create enclosed rooms. The wall height typically matches the ceiling height.
+
+## Related
+
+- [WallSystem](/api/systems/wall-system) - Manages wall geometry with mitering
+- [SlabSystem](/api/systems/slab-system) - Manages floor geometry
+- [ItemSystem](/api/systems/item-system) - Positions ceiling-attached items

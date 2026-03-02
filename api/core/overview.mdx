@@ -1,0 +1,187 @@
+---
+title: "@pascal-app/core Overview"
+description: "Core scene management, state store, and spatial systems for Pascal"
+---
+
+# @pascal-app/core
+
+The `@pascal-app/core` package provides the foundational scene graph management, state store, and spatial systems for Pascal. It handles the hierarchical node structure, undo/redo, persistence, and collision detection.
+
+## Installation
+
+```bash
+npm install @pascal-app/core
+```
+
+## Package Exports
+
+### Store
+
+- [`useScene`](/api/core/scene-store) - Main Zustand store for scene state management
+
+### Events
+
+- `emitter` - Event bus for scene interactions (based on mitt)
+- `eventSuffixes` - Available event types: `click`, `move`, `enter`, `leave`, `pointerdown`, `pointerup`, `context-menu`, `double-click`
+
+**Event Types:**
+- `BuildingEvent`
+- `CameraControlEvent`
+- `CeilingEvent`
+- `DoorEvent`
+- `EventSuffix`
+- `GridEvent`
+- `ItemEvent`
+- `LevelEvent`
+- `NodeEvent`
+- `RoofEvent`
+- `SiteEvent`
+- `SlabEvent`
+- `WallEvent`
+- `WindowEvent`
+- `ZoneEvent`
+
+### Hooks
+
+- [`sceneRegistry`](/api/core/scene-registry) - Global registry mapping node IDs to Three.js Object3D instances
+- [`useRegistry`](/api/core/scene-registry) - React hook to register Three.js objects with the scene registry
+- [`spatialGridManager`](/api/core/spatial-grid) - Singleton for spatial queries and collision detection
+- `useSpatialQuery` - Hook for querying spatial grid
+- `initSpatialGridSync` - Initialize spatial grid synchronization
+- `resolveLevelId` - Resolve level ID from a node
+
+### Schema
+
+**Node Types:**
+- `SiteNode` - Root container for buildings
+- `BuildingNode` - Contains levels
+- `LevelNode` - Contains walls, slabs, items
+- `WallNode` - Wall geometry
+- `SlabNode` - Floor/ceiling slab
+- `CeilingNode` - Ceiling geometry
+- `ItemNode` - 3D object/furniture
+- `ZoneNode` - Spatial zone
+- `RoofNode` - Roof geometry
+- `ScanNode` - Scan data
+- `GuideNode` - Guide/helper object
+- `WindowNode` - Window in wall
+- `DoorNode` - Door in wall
+
+**Utilities:**
+- `generateId` - Generate unique node IDs
+- `BaseNode` - Base node schema
+- `Material` - Material schema
+- `nodeType` - Node type enum
+- `objectId` - Object ID schema
+- `CameraSchema` - Camera configuration schema
+- `getScaledDimensions` - Get dimensions with scale applied
+- `AnyNode` - Union type of all node types
+- `AnyNodeId` - Any node ID type
+- `AnyNodeType` - Any node type string
+
+### Systems
+
+Systems are React components that run physics/validation logic each frame:
+
+- `CeilingSystem` - Ceiling validation and updates
+- `DoorSystem` - Door placement and validation
+- `ItemSystem` - Item collision detection
+- `RoofSystem` - Roof geometry updates
+- `SlabSystem` - Slab elevation and validation
+- `WallSystem` - Wall mitering and CSG operations
+- `WindowSystem` - Window placement validation
+
+### Space Detection
+
+- `detectSpacesForLevel` - Detect enclosed spaces in a level
+- `initSpaceDetectionSync` - Initialize space detection synchronization
+- `wallTouchesOthers` - Check if wall connects to other walls
+- `Space` - Space detection result type
+
+### Asset Storage
+
+- `loadAssetUrl` - Load asset URL from storage
+- `saveAsset` - Save asset to storage
+
+### Utilities
+
+- `isObject` - Type guard for objects
+- `pointInPolygon` - Point-in-polygon test (ray casting)
+
+## Architecture
+
+### Scene Graph
+
+The scene is a hierarchical tree structure:
+
+```
+SiteNode (root)
+└─ BuildingNode
+   └─ LevelNode
+      ├─ WallNode
+      │  ├─ WindowNode
+      │  ├─ DoorNode
+      │  └─ ItemNode (wall-attached)
+      ├─ SlabNode
+      ├─ CeilingNode
+      │  └─ ItemNode (ceiling-attached)
+      ├─ RoofNode
+      ├─ ZoneNode
+      └─ ItemNode (floor items)
+```
+
+### State Management
+
+The `useScene` store is built with:
+- **Zustand** - State management
+- **Zundo** - Undo/redo (temporal middleware)
+- **Persist** - LocalStorage persistence
+
+### Spatial Systems
+
+The `spatialGridManager` provides:
+- Floor grid for item placement
+- Wall grid for wall-mounted items
+- Ceiling grid for ceiling items
+- Slab elevation queries
+- Collision detection
+
+## Usage Example
+
+```tsx
+import useScene from '@pascal-app/core'
+import { spatialGridManager, sceneRegistry } from '@pascal-app/core'
+
+// Access scene state
+function MyComponent() {
+  const nodes = useScene((state) => state.nodes)
+  const createNode = useScene((state) => state.createNode)
+  
+  // Create a new item
+  const handleCreate = () => {
+    const itemNode = ItemNode.parse({
+      asset: { id: 'chair-01', attachTo: null },
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    })
+    createNode(itemNode, levelId)
+  }
+  
+  // Check if placement is valid
+  const canPlace = spatialGridManager.canPlaceOnFloor(
+    levelId,
+    [x, y, z],
+    [width, height, depth],
+    [0, 0, 0]
+  )
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+## Next Steps
+
+- [Scene Store API](/api/core/scene-store)
+- [Scene Registry](/api/core/scene-registry)
+- [Spatial Grid Manager](/api/core/spatial-grid)

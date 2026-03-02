@@ -1,0 +1,277 @@
+---
+title: "Scene Registry"
+description: "Global registry mapping node IDs to Three.js Object3D instances"
+---
+
+# Scene Registry
+
+The scene registry provides a global mapping from Pascal node IDs to their corresponding Three.js `Object3D` instances. This allows quick lookups for camera controls, raycasting, and other Three.js operations.
+
+## Import
+
+```tsx
+import { sceneRegistry, useRegistry } from '@pascal-app/core'
+```
+
+## sceneRegistry
+
+A global singleton object containing:
+
+### nodes
+
+```tsx
+nodes: Map<string, THREE.Object3D>
+```
+
+Master lookup map from node ID to Three.js Object3D instance.
+
+**Example:**
+```tsx
+const wallObject = sceneRegistry.nodes.get('wall-123')
+if (wallObject) {
+  // Manipulate Three.js object
+  wallObject.position.set(0, 0, 0)
+}
+```
+
+### byType
+
+```tsx
+byType: {
+  site: Set<string>
+  building: Set<string>
+  ceiling: Set<string>
+  level: Set<string>
+  wall: Set<string>
+  item: Set<string>
+  slab: Set<string>
+  zone: Set<string>
+  roof: Set<string>
+  scan: Set<string>
+  guide: Set<string>
+  window: Set<string>
+  door: Set<string>
+}
+```
+
+Categorized lookups mapping node types to Sets of node IDs. Using Sets provides faster add/delete operations than arrays.
+
+**Example:**
+```tsx
+// Get all wall IDs
+const wallIds = Array.from(sceneRegistry.byType.wall)
+
+// Get all wall objects
+const wallObjects = wallIds
+  .map(id => sceneRegistry.nodes.get(id))
+  .filter(Boolean)
+```
+
+## useRegistry
+
+React hook to register a Three.js object with the scene registry. Automatically handles cleanup on unmount.
+
+### Signature
+
+```tsx
+function useRegistry(
+  id: string,
+  type: keyof typeof sceneRegistry.byType,
+  ref: React.RefObject<THREE.Object3D>
+): void
+```
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  The Pascal node ID (e.g., `wall-123`, `item-456`)
+</ParamField>
+
+<ParamField path="type" type="keyof typeof sceneRegistry.byType" required>
+  The node type. Must be one of:
+  - `site`
+  - `building`
+  - `ceiling`
+  - `level`
+  - `wall`
+  - `item`
+  - `slab`
+  - `zone`
+  - `roof`
+  - `scan`
+  - `guide`
+  - `window`
+  - `door`
+</ParamField>
+
+<ParamField path="ref" type="React.RefObject<THREE.Object3D>" required>
+  React ref to the Three.js Object3D (or any subclass like Group, Mesh, etc.)
+</ParamField>
+
+### Behavior
+
+1. On mount (when `ref.current` becomes available):
+   - Adds the node ID → Object3D mapping to `sceneRegistry.nodes`
+   - Adds the node ID to the appropriate `sceneRegistry.byType` Set
+
+2. On unmount:
+   - Removes the node ID from `sceneRegistry.nodes`
+   - Removes the node ID from `sceneRegistry.byType`
+
+<Expandable title="Implementation Details">
+  Uses `useLayoutEffect` to ensure registration happens synchronously before paint, preventing race conditions with code that immediately queries the registry.
+</Expandable>
+
+## Usage Examples
+
+### Registering a Component
+
+```tsx
+import { useRegistry } from '@pascal-app/core'
+import { useRef } from 'react'
+import { Group } from '@react-three/fiber'
+
+function Wall({ id, start, end }: WallProps) {
+  const groupRef = useRef<THREE.Group>(null)
+  
+  // Register this wall's Three.js object
+  useRegistry(id, 'wall', groupRef)
+  
+  return (
+    <group ref={groupRef}>
+      {/* Wall geometry */}
+    </group>
+  )
+}
+```
+
+### Querying the Registry
+
+```tsx
+import { sceneRegistry } from '@pascal-app/core'
+
+// Get a specific object
+const wallObject = sceneRegistry.nodes.get('wall-123')
+
+// Get all walls
+const wallIds = Array.from(sceneRegistry.byType.wall)
+const wallObjects = wallIds
+  .map(id => sceneRegistry.nodes.get(id))
+  .filter((obj): obj is THREE.Object3D => obj !== undefined)
+
+// Focus camera on a node
+function focusOnNode(nodeId: string) {
+  const object = sceneRegistry.nodes.get(nodeId)
+  if (object) {
+    cameraControls.fitToBox(object, true)
+  }
+}
+```
+
+### Counting Nodes by Type
+
+```tsx
+import { sceneRegistry } from '@pascal-app/core'
+
+function SceneStats() {
+  const wallCount = sceneRegistry.byType.wall.size
+  const itemCount = sceneRegistry.byType.item.size
+  const totalCount = sceneRegistry.nodes.size
+  
+  return (
+    <div>
+      <p>Total objects: {totalCount}</p>
+      <p>Walls: {wallCount}</p>
+      <p>Items: {itemCount}</p>
+    </div>
+  )
+}
+```
+
+### Iterating Over Typed Nodes
+
+```tsx
+import { sceneRegistry } from '@pascal-app/core'
+
+// Hide all items
+function hideAllItems() {
+  for (const itemId of sceneRegistry.byType.item) {
+    const obj = sceneRegistry.nodes.get(itemId)
+    if (obj) {
+      obj.visible = false
+    }
+  }
+}
+
+// Show all walls
+function showAllWalls() {
+  for (const wallId of sceneRegistry.byType.wall) {
+    const obj = sceneRegistry.nodes.get(wallId)
+    if (obj) {
+      obj.visible = true
+    }
+  }
+}
+```
+
+### Camera Control Integration
+
+```tsx
+import { sceneRegistry } from '@pascal-app/core'
+import { emitter } from '@pascal-app/core'
+
+// Listen for camera focus events
+emitter.on('camera-controls:view', (event) => {
+  const object = sceneRegistry.nodes.get(event.nodeId)
+  if (object) {
+    cameraControls.fitToBox(object, true, {
+      paddingLeft: 0.5,
+      paddingRight: 0.5,
+      paddingTop: 0.5,
+      paddingBottom: 0.5,
+    })
+  }
+})
+```
+
+## Type Definitions
+
+```tsx
+export const sceneRegistry: {
+  nodes: Map<string, THREE.Object3D>
+  byType: {
+    site: Set<string>
+    building: Set<string>
+    ceiling: Set<string>
+    level: Set<string>
+    wall: Set<string>
+    item: Set<string>
+    slab: Set<string>
+    zone: Set<string>
+    roof: Set<string>
+    scan: Set<string>
+    guide: Set<string>
+    window: Set<string>
+    door: Set<string>
+  }
+}
+
+export function useRegistry(
+  id: string,
+  type: keyof typeof sceneRegistry.byType,
+  ref: React.RefObject<THREE.Object3D>
+): void
+```
+
+## Performance Considerations
+
+- **Fast lookups**: `Map.get()` is O(1)
+- **Fast iteration**: Iterating over a `Set` is faster than filtering an array
+- **Memory efficient**: Only stores references to existing Three.js objects
+- **Automatic cleanup**: No memory leaks from unmounted components
+
+## See Also
+
+- [Scene Store](/api/core/scene-store) - State management for node data
+- [Spatial Grid Manager](/api/core/spatial-grid) - Spatial queries
+- [Package Overview](/api/core/overview) - Full exports list

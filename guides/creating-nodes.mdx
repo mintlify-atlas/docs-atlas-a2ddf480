@@ -1,0 +1,273 @@
+---
+title: Creating Nodes
+description: Learn how to create different types of nodes in the Pascal Editor SDK
+---
+
+Nodes are the fundamental building blocks of your 3D scene. This guide shows you how to create walls, slabs, zones, and items programmatically.
+
+## Understanding Node Creation
+
+All nodes are created using `useScene.getState().createNode()`. Each node type has its own schema definition that validates the data structure.
+
+<Note>
+Nodes automatically appear in the 3D scene when created. The SDK handles registering them in the scene graph and making them visible.
+</Note>
+
+## Creating Nodes Step-by-Step
+
+<Steps>
+  <Step title="Import the required schemas">
+    First, import the node schemas and the scene store:
+
+    ```typescript
+    import { useScene, WallNode, SlabNode, ZoneNode, ItemNode } from '@pascal-app/core'
+    ```
+  </Step>
+
+  <Step title="Get the parent ID">
+    Most nodes need a parent. Typically, walls, slabs, zones, and items are children of a Level:
+
+    ```typescript
+    // Get the current level ID from the viewer state
+    const currentLevelId = useViewer.getState().selection.levelId
+    ```
+  </Step>
+
+  <Step title="Create the node data">
+    Use the schema's `.parse()` method to validate and create the node:
+
+    <CodeGroup>
+    ```typescript Wall
+    const wall = WallNode.parse({
+      start: [0, 0],      // Start point [x, z] in level coordinates
+      end: [5, 0],        // End point [x, z]
+      thickness: 0.2,     // Wall thickness in meters
+      height: 2.7,        // Wall height in meters
+      frontSide: 'interior',
+      backSide: 'exterior',
+    })
+    ```
+
+    ```typescript Slab
+    const slab = SlabNode.parse({
+      polygon: [
+        [0, 0],
+        [5, 0],
+        [5, 4],
+        [0, 4],
+      ],
+      elevation: 0.05,    // Slab elevation in meters
+      holes: [],          // Optional: array of hole polygons
+    })
+    ```
+
+    ```typescript Zone
+    const zone = ZoneNode.parse({
+      name: 'Living Room',
+      polygon: [
+        [0, 0],
+        [5, 0],
+        [5, 4],
+        [0, 4],
+      ],
+      color: '#3b82f6',   // Hex color for visualization
+      metadata: {
+        area: 20,         // Custom metadata
+        type: 'residential',
+      },
+    })
+    ```
+
+    ```typescript Item
+    const item = ItemNode.parse({
+      position: [2.5, 0, 2], // [x, y, z] in level coordinates
+      rotation: [0, Math.PI / 2, 0], // [x, y, z] rotation in radians
+      scale: [1, 1, 1],      // [x, y, z] scale multipliers
+      asset: {
+        id: 'sofa_01',
+        category: 'furniture',
+        name: 'Modern Sofa',
+        src: '/models/sofa.glb',
+        thumbnail: '/thumbnails/sofa.png',
+        dimensions: [2.0, 0.8, 0.9], // [width, height, depth]
+      },
+    })
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Add the node to the scene">
+    Call `createNode()` with the node data and parent ID:
+
+    ```typescript
+    useScene.getState().createNode(wall, currentLevelId)
+    useScene.getState().createNode(slab, currentLevelId)
+    useScene.getState().createNode(zone, currentLevelId)
+    useScene.getState().createNode(item, currentLevelId)
+    ```
+
+    The node will immediately appear in the 3D scene and be registered in the scene graph.
+  </Step>
+</Steps>
+
+## Parent-Child Relationships
+
+Nodes form a hierarchy through the `parentId` property. Understanding this structure is crucial:
+
+```typescript
+// Typical hierarchy:
+// Site → Building → Level → [Walls, Slabs, Zones, Items]
+
+// Items can also be children of other items (surface placement)
+const table = ItemNode.parse({
+  position: [2, 0, 2],
+  asset: { /* table asset */ },
+})
+useScene.getState().createNode(table, currentLevelId)
+
+// Place a lamp on the table
+const lamp = ItemNode.parse({
+  position: [0, 0.75, 0], // Relative to table surface
+  asset: {
+    id: 'lamp_01',
+    category: 'lighting',
+    name: 'Desk Lamp',
+    src: '/models/lamp.glb',
+    dimensions: [0.2, 0.4, 0.2],
+    surface: { height: 0.75 }, // Table surface height
+  },
+})
+useScene.getState().createNode(lamp, table.id) // Parent is the table
+```
+
+<Tip>
+When an item is placed on another item's surface, its position is relative to the parent item's coordinate system.
+</Tip>
+
+## Wall-Attached Items
+
+Items can attach to walls using the `attachTo` property:
+
+```typescript
+// First, create a wall
+const wall = WallNode.parse({
+  start: [0, 0],
+  end: [5, 0],
+  thickness: 0.2,
+  height: 2.7,
+})
+useScene.getState().createNode(wall, currentLevelId)
+
+// Create a wall-mounted item (e.g., TV)
+const tv = ItemNode.parse({
+  position: [2.5, 1.2, 0], // X = distance along wall, Y = height, Z ignored
+  side: 'front',           // Which side of the wall
+  asset: {
+    id: 'tv_01',
+    category: 'electronics',
+    name: 'Wall TV',
+    src: '/models/tv.glb',
+    dimensions: [1.2, 0.7, 0.1],
+    attachTo: 'wall-side',
+  },
+})
+useScene.getState().createNode(tv, wall.id) // Parent is the wall
+```
+
+<Note>
+For wall-attached items:
+- `position[0]` is the distance from the wall start point
+- `position[1]` is the height from the floor
+- The item will snap to the specified wall side
+</Note>
+
+## Batch Node Creation
+
+Create multiple nodes efficiently using `createNodes()`:
+
+```typescript
+const operations = [
+  {
+    node: WallNode.parse({ start: [0, 0], end: [5, 0] }),
+    parentId: currentLevelId,
+  },
+  {
+    node: WallNode.parse({ start: [5, 0], end: [5, 4] }),
+    parentId: currentLevelId,
+  },
+  {
+    node: WallNode.parse({ start: [5, 4], end: [0, 4] }),
+    parentId: currentLevelId,
+  },
+  {
+    node: WallNode.parse({ start: [0, 4], end: [0, 0] }),
+    parentId: currentLevelId,
+  },
+]
+
+useScene.getState().createNodes(operations)
+```
+
+## Node Visibility
+
+All nodes have a `visible` property that controls their visibility in the 3D scene:
+
+```typescript
+const hiddenZone = ZoneNode.parse({
+  name: 'Reference Zone',
+  polygon: [[0, 0], [2, 0], [2, 2], [0, 2]],
+  visible: false, // Won't be rendered in the scene
+})
+```
+
+<Warning>
+Invisible nodes still participate in spatial queries and collision detection. They're only hidden visually.
+</Warning>
+
+## Common Patterns
+
+### Creating a Room with Furniture
+
+```typescript
+const createRoom = (levelId: string) => {
+  // Define room boundaries
+  const roomWidth = 5
+  const roomDepth = 4
+
+  // Create walls
+  const walls = [
+    WallNode.parse({ start: [0, 0], end: [roomWidth, 0] }),
+    WallNode.parse({ start: [roomWidth, 0], end: [roomWidth, roomDepth] }),
+    WallNode.parse({ start: [roomWidth, roomDepth], end: [0, roomDepth] }),
+    WallNode.parse({ start: [0, roomDepth], end: [0, 0] }),
+  ]
+
+  walls.forEach(wall => useScene.getState().createNode(wall, levelId))
+
+  // Create floor slab
+  const slab = SlabNode.parse({
+    polygon: [[0, 0], [roomWidth, 0], [roomWidth, roomDepth], [0, roomDepth]],
+    elevation: 0.05,
+  })
+  useScene.getState().createNode(slab, levelId)
+
+  // Add furniture
+  const sofa = ItemNode.parse({
+    position: [2.5, 0, 1],
+    rotation: [0, 0, 0],
+    asset: sofaAsset,
+  })
+  useScene.getState().createNode(sofa, levelId)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Event Handling" icon="bolt" href="/guides/event-handling">
+    Learn how to respond to user interactions with nodes
+  </Card>
+  <Card title="Spatial Queries" icon="location-dot" href="/guides/spatial-queries">
+    Validate placement and perform collision detection
+  </Card>
+</CardGroup>

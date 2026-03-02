@@ -1,0 +1,230 @@
+---
+title: "BuildingNode"
+description: "Node representing a building structure with position, rotation, and levels"
+---
+
+## Overview
+
+The `BuildingNode` represents a building structure within a site. It defines the building's position and rotation in the site coordinate system and contains references to level nodes.
+
+**Key features**:
+- Positioned and rotated within the site
+- Contains multiple levels (floors)
+- Each level contains walls, slabs, zones, and other elements
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+import { LevelNode } from './level'
+
+const BuildingNode = BaseNode.extend({
+  id: objectId('building'),
+  type: nodeType('building'),
+  children: z.array(LevelNode.shape.id).default([]),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+})
+
+type BuildingNode = z.infer<typeof BuildingNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/building.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique building identifier.
+  
+  **Format**: `building_{randomString}`
+  
+  **Example**: `"building_x9y8z7w6v5u4t3s2"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"building"`.
+  
+  **Default**: `"building"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the building.
+  
+  **Example**: `"North Tower"`, `"Main Building"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent site's ID.
+  
+  **Example**: `"site_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls building visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the building.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the building.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Building-Specific Fields
+
+<ParamField path="position" type="[number, number, number]" required>
+  Position of the building in the site coordinate system.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[10.5, 0, -5.2]`
+  
+  The position is typically set with y=0 (ground level), with x and z defining the horizontal placement within the site.
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Rotation of the building in the site coordinate system.
+  
+  **Format**: `[x, y, z]` in radians (Euler angles)
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[0, Math.PI / 4, 0]` (45-degree rotation around Y axis)
+  
+  Most commonly, only the Y rotation is used to orient the building on the site.
+</ParamField>
+
+<ParamField path="children" type="Array<string>" required>
+  Array of level node IDs belonging to this building.
+  
+  **Default**: `[]`
+  
+  **Example**: `["level_aaa111", "level_bbb222", "level_ccc333"]`
+  
+  Each level ID references a LevelNode that contains the walls, slabs, and zones for that floor.
+</ParamField>
+
+## Example
+
+```typescript
+import { BuildingNode } from '@pascal/core/schema/nodes/building'
+
+const building: BuildingNode = {
+  object: 'node',
+  id: 'building_xyz789',
+  type: 'building',
+  name: 'East Wing',
+  parentId: 'site_abc123',
+  visible: true,
+  position: [15, 0, -10],
+  rotation: [0, Math.PI / 6, 0], // 30-degree rotation
+  children: [
+    'level_ground_floor',
+    'level_first_floor',
+    'level_second_floor',
+  ],
+  metadata: {
+    buildingType: 'residential',
+    floors: 3,
+  },
+}
+```
+
+## Usage
+
+### Creating a Building
+
+```typescript
+import { BuildingNode } from '@pascal/core/schema/nodes/building'
+
+// Parse with defaults
+const building = BuildingNode.parse({
+  name: 'Main Building',
+})
+// Result: Building at origin [0,0,0] with no rotation
+```
+
+### Positioning a Building
+
+```typescript
+const building = BuildingNode.parse({
+  name: 'North Building',
+  position: [20, 0, -15],
+  rotation: [0, Math.PI / 2, 0], // 90-degree rotation
+})
+```
+
+### Adding Levels
+
+```typescript
+import { LevelNode } from '@pascal/core/schema/nodes/level'
+import { generateId } from '@pascal/core/schema/base'
+
+// Create level nodes
+const groundFloor = LevelNode.parse({
+  name: 'Ground Floor',
+  level: 0,
+})
+
+const firstFloor = LevelNode.parse({
+  name: 'First Floor',
+  level: 1,
+})
+
+// Reference them in the building
+const building = BuildingNode.parse({
+  name: 'Two-Story Building',
+  children: [groundFloor.id, firstFloor.id],
+})
+```
+
+## Coordinate System
+
+The building defines its own local coordinate system:
+- Origin is at the building's position
+- Axes are rotated according to the rotation field
+- Child levels use this coordinate system for their elements
+
+```
+Site Coordinate System
+  ↓
+  └─ Building Position + Rotation
+       ↓
+       └─ Building Local Coordinate System
+            ↓
+            └─ Level Elements (walls, slabs, etc.)
+```
+
+## Hierarchy
+
+```
+SiteNode
+└── BuildingNode
+    ├── LevelNode (Ground Floor)
+    │   ├── WallNode
+    │   ├── SlabNode
+    │   └── ZoneNode
+    ├── LevelNode (First Floor)
+    │   ├── WallNode
+    │   └── SlabNode
+    └── LevelNode (Second Floor)
+        └── ...
+```
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [SiteNode](/api/nodes/site) - Parent node containing buildings
+- [LevelNode](/api/nodes/level) - Levels within a building

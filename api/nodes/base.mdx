@@ -1,0 +1,151 @@
+---
+title: "BaseNode"
+description: "Base schema for all node types in the Pascal Editor SDK"
+---
+
+## Overview
+
+The `BaseNode` schema defines the core fields shared by all node types in the Pascal Editor SDK. Every node in the scene graph (Site, Building, Level, Wall, Slab, Zone, Item) extends this base schema.
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { CameraSchema } from './camera'
+
+const BaseNode = z.object({
+  object: z.literal('node').default('node'),
+  id: z.string(),
+  type: nodeType('node'),
+  name: z.string().optional(),
+  parentId: z.string().nullable().default(null),
+  visible: z.boolean().optional().default(true),
+  camera: CameraSchema.optional(),
+  metadata: z.json().optional().default({}),
+})
+
+type BaseNode = z.infer<typeof BaseNode>
+```
+
+## Fields
+
+<ParamField path="object" type="string" required>
+  Always set to `"node"`. This field identifies the object type.
+  
+  **Default**: `"node"`
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Unique identifier for the node. Generated using the `generateId()` function with a type-specific prefix.
+  
+  **Format**: `{type}_{randomString}`
+  
+  **Examples**:
+  - `site_a1b2c3d4e5f6g7h8`
+  - `building_x9y8z7w6v5u4t3s2`
+  - `wall_m1n2o3p4q5r6s7t8`
+  
+  The ID is generated using a custom alphabet nanoid with 16 characters from `0123456789abcdefghijklmnopqrstuvwxyz`.
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  The node type discriminator. This field is used to distinguish between different node types in discriminated unions.
+  
+  **Valid values**: `"site"`, `"building"`, `"level"`, `"wall"`, `"slab"`, `"zone"`, `"item"`, etc.
+  
+  **Default**: `"node"` (overridden by specific node types)
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional human-readable name for the node.
+  
+  **Example**: `"Main Building"`, `"Ground Floor"`, `"Living Room"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent node's ID in the scene graph hierarchy.
+  
+  **Default**: `null` (for root nodes like Site)
+  
+  **Example**: `"building_abc123"` (for a Level node inside a Building)
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls the visibility of the node in the 3D scene.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera configuration associated with this node. Used for viewpoint navigation.
+  
+  See the [Camera Schema](/api/camera) documentation for details.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Arbitrary JSON data for storing custom properties.
+  
+  **Default**: `{}`
+  
+  **Example**:
+  ```json
+  {
+    "createdBy": "user123",
+    "createdAt": "2024-01-15T10:30:00Z",
+    "tags": ["residential", "modern"]
+  }
+  ```
+</ParamField>
+
+## ID Generation
+
+The SDK provides utility functions for generating type-safe IDs:
+
+```typescript
+import { generateId, objectId } from '@pascal/core/schema/base'
+
+// Generate a new ID with a specific prefix
+const siteId = generateId('site') // Returns: "site_a1b2c3d4e5f6g7h8"
+
+// Create a Zod schema with automatic ID generation
+const siteIdSchema = objectId('site')
+const parsed = siteIdSchema.parse(undefined) // Auto-generates ID
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/base.ts:12-18`
+
+## Type Discriminator Pattern
+
+The `type` field is used as a discriminator in Zod's `discriminatedUnion` to enable type-safe parsing:
+
+```typescript
+// Example from SiteNode
+z.discriminatedUnion('type', [BuildingNode, ItemNode])
+```
+
+This allows TypeScript to automatically narrow types based on the `type` field value.
+
+## Usage
+
+The `BaseNode` schema is not used directly. Instead, specific node types extend it:
+
+```typescript
+import { BaseNode, nodeType, objectId } from '@pascal/core/schema/base'
+
+const CustomNode = BaseNode.extend({
+  id: objectId('custom'),
+  type: nodeType('custom'),
+  // Add custom fields here
+  customField: z.string(),
+})
+```
+
+## Related
+
+- [SiteNode](/api/nodes/site)
+- [BuildingNode](/api/nodes/building)
+- [LevelNode](/api/nodes/level)
+- [WallNode](/api/nodes/wall)
+- [SlabNode](/api/nodes/slab)
+- [ZoneNode](/api/nodes/zone)
+- [ItemNode](/api/nodes/item)

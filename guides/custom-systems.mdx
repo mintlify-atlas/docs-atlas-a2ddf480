@@ -1,0 +1,399 @@
+---
+title: Custom Systems
+description: Build custom systems to add behavior and automation to your 3D scene
+---
+
+Systems are the engine that powers dynamic behavior in Pascal Editor. They run every frame to process dirty nodes, update geometries, and synchronize the scene state with Three.js objects.
+
+## Understanding Systems
+
+A system is a React component that:
+1. Subscribes to the `dirtyNodes` set from the scene state
+2. Uses `useFrame()` to run logic every frame
+3. Processes nodes that need updates
+4. Accesses Three.js objects via the scene registry
+5. Clears the dirty flag when processing is complete
+
+<Note>
+Systems are already running for core node types (walls, items, slabs, etc.). You typically create custom systems for:
+- Custom node types
+- Advanced automation
+- Performance-critical calculations
+- Integration with external services
+</Note>
+
+## The System Pattern
+
+Here's the anatomy of a system using the real ItemSystem as an example:
+
+```typescript
+import { useFrame } from '@react-three/fiber'
+import { sceneRegistry } from '@pascal-app/core'
+import useScene from '@pascal-app/core/store'
+
+export const ItemSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame(() => {
+    if (dirtyNodes.size === 0) return
+    const nodes = useScene.getState().nodes
+
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (!node || node.type !== 'item') return
+
+      // Get the Three.js object from the registry
+      const mesh = sceneRegistry.nodes.get(id) as THREE.Object3D
+      if (!mesh) return
+
+      // Perform updates (e.g., position adjustments)
+      // ... system logic here ...
+
+      clearDirty(id)
+    })
+  }, 2) // Priority: lower numbers run first
+
+  return null
+}
+```
+
+## Creating a Custom System
+
+<Steps>
+  <Step title="Define your system component">
+    Create a React component that will house your system logic:
+
+    ```typescript
+    import { useFrame } from '@react-three/fiber'
+    import { sceneRegistry, useScene } from '@pascal-app/core'
+    import type { AnyNodeId } from '@pascal-app/core'
+
+    export const CustomSystem = () => {
+      const dirtyNodes = useScene((state) => state.dirtyNodes)
+      const clearDirty = useScene((state) => state.clearDirty)
+
+      useFrame(() => {
+        // System logic runs here every frame
+      }, 5) // Priority level (optional)
+
+      return null
+    }
+    ```
+
+    <Tip>
+    System components don't render anything - they're purely for side effects. Always return `null`.
+    </Tip>
+  </Step>
+
+  <Step title="Subscribe to dirty nodes">
+    Access the dirty nodes set to know which nodes need processing:
+
+    ```typescript
+    useFrame(() => {
+      if (dirtyNodes.size === 0) return // Early exit if nothing to do
+
+      const nodes = useScene.getState().nodes
+
+      dirtyNodes.forEach((id) => {
+        const node = nodes[id]
+        if (!node) return
+
+        // Filter for your node type
+        if (node.type === 'custom-type') {
+          // Process this node
+        }
+      })
+    })
+    ```
+  </Step>
+
+  <Step title="Access Three.js objects via registry">
+    The scene registry maps node IDs to their Three.js representations:
+
+    ```typescript
+    const mesh = sceneRegistry.nodes.get(id) as THREE.Mesh
+    if (!mesh) return // Object not ready yet
+
+    // Now you can manipulate the Three.js object
+    mesh.position.y = computedHeight
+    mesh.rotation.y = computedRotation
+    ```
+
+    <Note>
+    If the mesh doesn't exist yet, keep the node dirty so it's processed in the next frame.
+    </Note>
+  </Step>
+
+  <Step title="Implement your logic">
+    Add your custom behavior. Here's an example that animates items:
+
+    ```typescript
+    const item = node as ItemNode
+    const mesh = sceneRegistry.nodes.get(id) as THREE.Object3D
+    if (!mesh) return
+
+    // Example: Apply a floating animation
+    const time = Date.now() * 0.001
+    const floatHeight = Math.sin(time + id.charCodeAt(0)) * 0.1
+    mesh.position.y = item.position[1] + floatHeight
+
+    // Don't clear dirty - we want to run every frame for animation
+    // clearDirty(id)
+    ```
+  </Step>
+
+  <Step title="Clear the dirty flag">
+    When processing is complete, clear the dirty flag:
+
+    ```typescript
+    clearDirty(id as AnyNodeId)
+    ```
+
+    <Warning>
+    Always clear the dirty flag unless you intentionally want the node to be reprocessed every frame (e.g., for animations).
+    </Warning>
+  </Step>
+
+  <Step title="Register your system">
+    Add your system component to the scene:
+
+    ```typescript
+    // In your main Scene component
+    import { CustomSystem } from './systems/custom-system'
+
+    export function Scene() {
+      return (
+        <Canvas>
+          {/* Other scene components */}
+          <CustomSystem />
+        </Canvas>
+      )
+    }
+    ```
+  </Step>
+</Steps>
+
+## Real-World Example: Wall Mitering System
+
+The WallSystem is a sophisticated example that demonstrates advanced system patterns:
+
+```typescript
+import { useFrame } from '@react-three/fiber'
+import { sceneRegistry } from '@pascal-app/core'
+import useScene from '@pascal-app/core/store'
+import { calculateLevelMiters, getAdjacentWallIds } from './wall-mitering'
+
+export const WallSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame(() => {
+    if (dirtyNodes.size === 0) return
+
+    const nodes = useScene.getState().nodes
+
+    // Group dirty walls by level
+    const dirtyWallsByLevel = new Map<string, Set<string>>()
+
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (!node || node.type !== 'wall') return
+
+      const levelId = node.parentId
+      if (!levelId) return
+
+      if (!dirtyWallsByLevel.has(levelId)) {
+        dirtyWallsByLevel.set(levelId, new Set())
+      }
+      dirtyWallsByLevel.get(levelId)!.add(id)
+    })
+
+    // Process each level
+    for (const [levelId, dirtyWallIds] of dirtyWallsByLevel) {
+      const levelWalls = getLevelWalls(levelId)
+      const miterData = calculateLevelMiters(levelWalls)
+
+      // Update dirty walls
+      for (const wallId of dirtyWallIds) {
+        const mesh = sceneRegistry.nodes.get(wallId) as THREE.Mesh
+        if (mesh) {
+          updateWallGeometry(wallId, miterData)
+          clearDirty(wallId)
+        }
+      }
+
+      // Also update adjacent walls that share junctions
+      const adjacentWallIds = getAdjacentWallIds(levelWalls, dirtyWallIds)
+      for (const wallId of adjacentWallIds) {
+        const mesh = sceneRegistry.nodes.get(wallId) as THREE.Mesh
+        if (mesh) {
+          updateWallGeometry(wallId, miterData)
+        }
+      }
+    }
+  }, 4) // Priority 4 - runs after item system (priority 2)
+
+  return null
+}
+```
+
+## useFrame Priority
+
+The second argument to `useFrame()` controls execution order:
+
+```typescript
+useFrame(() => {
+  // System logic
+}, priority)
+```
+
+**Lower numbers run first:**
+- Priority 2: ItemSystem (positioning)
+- Priority 4: WallSystem (geometry)
+- Priority 5: Custom systems (default)
+
+<Tip>
+Set priority based on dependencies. If your system needs updated item positions, use a priority higher than 2.
+</Tip>
+
+## Performance Best Practices
+
+### Early Exit for Empty Dirty Set
+
+```typescript
+useFrame(() => {
+  if (dirtyNodes.size === 0) return // Skip frame if nothing to do
+  // ... system logic
+})
+```
+
+### Batch Processing
+
+Group related operations to minimize redundant calculations:
+
+```typescript
+// Group nodes by level first
+const nodesByLevel = new Map<string, Set<string>>()
+dirtyNodes.forEach((id) => {
+  const node = nodes[id]
+  if (!node) return
+  const levelId = node.parentId || 'root'
+  if (!nodesByLevel.has(levelId)) {
+    nodesByLevel.set(levelId, new Set())
+  }
+  nodesByLevel.get(levelId)!.add(id)
+})
+
+// Process each level once
+for (const [levelId, nodeIds] of nodesByLevel) {
+  const levelData = computeLevelData(levelId) // Compute once
+  nodeIds.forEach((id) => {
+    processNode(id, levelData) // Reuse computed data
+  })
+}
+```
+
+### Deferred Mesh Access
+
+```typescript
+const mesh = sceneRegistry.nodes.get(id)
+if (!mesh) return // Don't clear dirty - try again next frame
+
+// Process mesh
+mesh.position.set(...)
+
+clearDirty(id) // Only clear when successfully processed
+```
+
+## Scene Registry API
+
+The scene registry provides fast lookups:
+
+```typescript
+import { sceneRegistry } from '@pascal-app/core'
+
+// Get a specific node's Three.js object
+const mesh = sceneRegistry.nodes.get(nodeId) as THREE.Mesh
+
+// Get all nodes of a specific type
+const allWallIds = sceneRegistry.byType.wall // Set<string>
+
+// Iterate through all walls
+for (const wallId of sceneRegistry.byType.wall) {
+  const wallMesh = sceneRegistry.nodes.get(wallId) as THREE.Mesh
+  // Do something with wall mesh
+}
+```
+
+## Example: Auto-Rotation System
+
+Here's a complete example of a system that auto-rotates items tagged with `autoRotate`:
+
+```typescript
+import { useFrame } from '@react-three/fiber'
+import { sceneRegistry, useScene, type ItemNode } from '@pascal-app/core'
+import type * as THREE from 'three'
+
+export const AutoRotateSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame((_, delta) => {
+    const nodes = useScene.getState().nodes
+
+    // Process all items, not just dirty ones (continuous animation)
+    for (const id of sceneRegistry.byType.item) {
+      const node = nodes[id]
+      if (!node || node.type !== 'item') continue
+
+      const item = node as ItemNode
+
+      // Check if item has autoRotate metadata
+      const metadata = item.metadata as Record<string, unknown> | undefined
+      if (!metadata?.autoRotate) continue
+
+      const mesh = sceneRegistry.nodes.get(id) as THREE.Object3D
+      if (!mesh) continue
+
+      // Apply rotation
+      const speed = (metadata.rotationSpeed as number) || 1.0
+      mesh.rotation.y += delta * speed
+    }
+
+    // Clear dirty flags for items that were dirty
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (node?.type === 'item') {
+        clearDirty(id)
+      }
+    })
+  })
+
+  return null
+}
+```
+
+Use it by adding metadata to items:
+
+```typescript
+const spinningItem = ItemNode.parse({
+  position: [0, 0, 0],
+  asset: myAsset,
+  metadata: {
+    autoRotate: true,
+    rotationSpeed: 2.0,
+  },
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Event Handling" icon="bolt" href="/guides/event-handling">
+    Respond to user interactions in your systems
+  </Card>
+  <Card title="Spatial Queries" icon="location-dot" href="/guides/spatial-queries">
+    Use spatial queries in your system logic
+  </Card>
+</CardGroup>

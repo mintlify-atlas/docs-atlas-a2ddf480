@@ -1,0 +1,527 @@
+---
+title: "Spatial Grid Manager"
+description: "Collision detection and spatial queries for floor, wall, and ceiling placement"
+---
+
+# Spatial Grid Manager
+
+The `spatialGridManager` provides spatial indexing and collision detection for items placed on floors, walls, and ceilings. It maintains separate grids per level and validates item placement based on geometry overlap.
+
+## Import
+
+```tsx
+import { spatialGridManager, pointInPolygon } from '@pascal-app/core'
+```
+
+## spatialGridManager
+
+Singleton instance of `SpatialGridManager` with a default cell size of 0.5 meters.
+
+```tsx
+export const spatialGridManager = new SpatialGridManager()
+```
+
+## Methods
+
+### handleNodeCreated
+
+Called when a node is created. Registers the node in appropriate spatial grids.
+
+```tsx
+handleNodeCreated(node: AnyNode, levelId: string): void
+```
+
+<ParamField path="node" type="AnyNode" required>
+  The created node
+</ParamField>
+
+<ParamField path="levelId" type="string" required>
+  The level ID containing this node
+</ParamField>
+
+<Expandable title="Handled Node Types">
+  - **SlabNode**: Stored for elevation queries
+  - **CeilingNode**: Stored for ceiling item placement
+  - **WallNode**: Stored for wall item placement calculations
+  - **ItemNode**: Inserted into floor, wall, or ceiling grid based on `asset.attachTo`
+</Expandable>
+
+### handleNodeUpdated
+
+Called when a node is updated. Re-indexes the node in spatial grids.
+
+```tsx
+handleNodeUpdated(node: AnyNode, levelId: string): void
+```
+
+<ParamField path="node" type="AnyNode" required>
+  The updated node
+</ParamField>
+
+<ParamField path="levelId" type="string" required>
+  The level ID containing this node
+</ParamField>
+
+### handleNodeDeleted
+
+Called when a node is deleted. Removes the node from spatial grids.
+
+```tsx
+handleNodeDeleted(nodeId: string, nodeType: string, levelId: string): string[]
+```
+
+<ParamField path="nodeId" type="string" required>
+  The deleted node ID
+</ParamField>
+
+<ParamField path="nodeType" type="string" required>
+  The node type (e.g., 'wall', 'item', 'slab')
+</ParamField>
+
+<ParamField path="levelId" type="string" required>
+  The level ID containing this node
+</ParamField>
+
+<ResponseField name="returns" type="string[]">
+  Array of item IDs that were removed (e.g., when deleting a wall removes all attached items)
+</ResponseField>
+
+### canPlaceOnFloor
+
+Checks if an item can be placed on the floor without collisions.
+
+```tsx
+canPlaceOnFloor(
+  levelId: string,
+  position: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number],
+  ignoreIds?: string[]
+): { valid: boolean; conflictIds: string[] }
+```
+
+<ParamField path="levelId" type="string" required>
+  The level ID to check placement in
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" required>
+  World position `[x, y, z]`
+</ParamField>
+
+<ParamField path="dimensions" type="[number, number, number]" required>
+  Item dimensions `[width, height, depth]`
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Euler rotation `[x, y, z]` in radians (typically only Y rotation is used)
+</ParamField>
+
+<ParamField path="ignoreIds" type="string[]">
+  Optional array of item IDs to ignore during collision check (e.g., the item being moved)
+</ParamField>
+
+<ResponseField name="returns" type="{ valid: boolean; conflictIds: string[] }">
+  - `valid`: `true` if placement is allowed, `false` if there are collisions
+  - `conflictIds`: Array of item IDs that would overlap
+</ResponseField>
+
+### canPlaceOnWall
+
+Checks if an item can be placed on a wall without collisions.
+
+```tsx
+canPlaceOnWall(
+  levelId: string,
+  wallId: string,
+  localX: number,
+  localY: number,
+  dimensions: [number, number, number],
+  attachType: 'wall' | 'wall-side' = 'wall',
+  side?: 'front' | 'back',
+  ignoreIds?: string[]
+): { valid: boolean; conflictIds: string[] }
+```
+
+<ParamField path="levelId" type="string" required>
+  The level ID containing the wall
+</ParamField>
+
+<ParamField path="wallId" type="string" required>
+  The wall ID to place the item on
+</ParamField>
+
+<ParamField path="localX" type="number" required>
+  X position in wall-local space (distance from wall start in meters)
+</ParamField>
+
+<ParamField path="localY" type="number" required>
+  Y position (height from floor in meters)
+</ParamField>
+
+<ParamField path="dimensions" type="[number, number, number]" required>
+  Item dimensions `[width, height, depth]`
+</ParamField>
+
+<ParamField path="attachType" type="'wall' | 'wall-side'" default="'wall'">
+  - `'wall'`: Item needs both sides of the wall (goes through the wall)
+  - `'wall-side'`: Item only needs one side of the wall (e.g., picture frame)
+</ParamField>
+
+<ParamField path="side" type="'front' | 'back'">
+  Required if `attachType` is `'wall-side'`. Specifies which side of the wall.
+</ParamField>
+
+<ParamField path="ignoreIds" type="string[]">
+  Optional array of item IDs to ignore during collision check
+</ParamField>
+
+<ResponseField name="returns" type="{ valid: boolean; conflictIds: string[] }">
+  - `valid`: `true` if placement is allowed
+  - `conflictIds`: Array of conflicting item IDs
+</ResponseField>
+
+### getSlabElevationAt
+
+Gets the total slab elevation at a given (x, z) position on a level.
+
+```tsx
+getSlabElevationAt(levelId: string, x: number, z: number): number
+```
+
+<ParamField path="levelId" type="string" required>
+  The level ID
+</ParamField>
+
+<ParamField path="x" type="number" required>
+  X coordinate in world space
+</ParamField>
+
+<ParamField path="z" type="number" required>
+  Z coordinate in world space
+</ParamField>
+
+<ResponseField name="returns" type="number">
+  The highest slab elevation at this point, or `0` if the point is not inside any slab (or is inside a hole)
+</ResponseField>
+
+<Expandable title="Algorithm">
+  - Iterates through all slabs on the level
+  - Uses `pointInPolygon` to check if the point is inside the slab polygon
+  - Checks if the point is inside any holes in the slab
+  - Returns the highest elevation found (slabs can stack)
+</Expandable>
+
+### getSlabElevationForItem
+
+Gets the slab elevation for an item using its full footprint (bounding box).
+
+```tsx
+getSlabElevationForItem(
+  levelId: string,
+  position: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number]
+): number
+```
+
+<ParamField path="levelId" type="string" required>
+  The level ID
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" required>
+  Item world position `[x, y, z]`
+</ParamField>
+
+<ParamField path="dimensions" type="[number, number, number]" required>
+  Item dimensions `[width, height, depth]`
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Item rotation `[x, y, z]` in radians
+</ParamField>
+
+<ResponseField name="returns" type="number">
+  The highest overlapping slab elevation, or `0` if no overlap
+</ResponseField>
+
+<Expandable title="Algorithm">
+  - Computes the item's rotated footprint (4 corners)
+  - Checks if any part of the footprint overlaps with slab polygons
+  - Excludes slabs where the item center is inside a hole
+  - Returns the highest elevation found
+</Expandable>
+
+### getSlabElevationForWall
+
+Gets the slab elevation for a wall by checking if it overlaps with any slab polygon.
+
+```tsx
+getSlabElevationForWall(
+  levelId: string,
+  start: [number, number],
+  end: [number, number]
+): number
+```
+
+<ParamField path="levelId" type="string" required>
+  The level ID
+</ParamField>
+
+<ParamField path="start" type="[number, number]" required>
+  Wall start point `[x, z]`
+</ParamField>
+
+<ParamField path="end" type="[number, number]" required>
+  Wall end point `[x, z]`
+</ParamField>
+
+<ResponseField name="returns" type="number">
+  The highest slab elevation, or `0` if the wall doesn't overlap any slab
+</ResponseField>
+
+<Expandable title="Algorithm">
+  - Uses `wallOverlapsPolygon` to check overlap with slab polygons
+  - Samples multiple points along the wall (0%, 25%, 50%, 75%, 100%) to handle holes
+  - Returns the highest elevation where at least one sample point is on solid slab (not in a hole)
+</Expandable>
+
+### canPlaceOnCeiling
+
+Checks if an item can be placed on a ceiling without collisions.
+
+```tsx
+canPlaceOnCeiling(
+  ceilingId: string,
+  position: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number],
+  ignoreIds?: string[]
+): { valid: boolean; conflictIds: string[] }
+```
+
+<ParamField path="ceilingId" type="string" required>
+  The ceiling ID
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" required>
+  Item position in ceiling-local space `[x, y, z]`
+</ParamField>
+
+<ParamField path="dimensions" type="[number, number, number]" required>
+  Item dimensions `[width, height, depth]`
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Item rotation `[x, y, z]` in radians
+</ParamField>
+
+<ParamField path="ignoreIds" type="string[]">
+  Optional array of item IDs to ignore during collision check
+</ParamField>
+
+<ResponseField name="returns" type="{ valid: boolean; conflictIds: string[] }">
+  - `valid`: `true` if placement is allowed
+  - `conflictIds`: Array of conflicting item IDs
+</ResponseField>
+
+<Expandable title="Validation Logic">
+  1. Checks that the ceiling polygon exists and has at least 3 vertices
+  2. Validates all item footprint corners are inside the ceiling polygon
+  3. Checks that the item center is not inside any ceiling holes
+  4. Checks for overlaps with other ceiling items
+</Expandable>
+
+### clearLevel
+
+Clears all spatial grids for a level.
+
+```tsx
+clearLevel(levelId: string): void
+```
+
+<ParamField path="levelId" type="string" required>
+  The level ID to clear
+</ParamField>
+
+### clear
+
+Clears all spatial grids.
+
+```tsx
+clear(): void
+```
+
+## Utility Functions
+
+### pointInPolygon
+
+Point-in-polygon test using ray casting algorithm.
+
+```tsx
+export function pointInPolygon(
+  px: number,
+  pz: number,
+  polygon: Array<[number, number]>
+): boolean
+```
+
+<ParamField path="px" type="number" required>
+  Point X coordinate
+</ParamField>
+
+<ParamField path="pz" type="number" required>
+  Point Z coordinate
+</ParamField>
+
+<ParamField path="polygon" type="Array<[number, number]>" required>
+  Polygon vertices as `[x, z]` pairs
+</ParamField>
+
+<ResponseField name="returns" type="boolean">
+  `true` if the point is inside the polygon, `false` otherwise
+</ResponseField>
+
+## Usage Examples
+
+### Floor Item Placement
+
+```tsx
+import { spatialGridManager } from '@pascal-app/core'
+
+function tryPlaceItem(
+  levelId: string,
+  position: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number]
+) {
+  const result = spatialGridManager.canPlaceOnFloor(
+    levelId,
+    position,
+    dimensions,
+    rotation
+  )
+  
+  if (result.valid) {
+    console.log('Item can be placed!')
+    // Create the item node
+  } else {
+    console.log('Collision detected with:', result.conflictIds)
+  }
+}
+```
+
+### Wall Item Placement
+
+```tsx
+import { spatialGridManager } from '@pascal-app/core'
+
+function placeWallArt(
+  levelId: string,
+  wallId: string,
+  localX: number,
+  localY: number
+) {
+  const dimensions: [number, number, number] = [0.8, 0.6, 0.05] // width, height, depth
+  
+  const result = spatialGridManager.canPlaceOnWall(
+    levelId,
+    wallId,
+    localX,
+    localY,
+    dimensions,
+    'wall-side', // Art only needs one side
+    'front'
+  )
+  
+  if (result.valid) {
+    // Create wall-attached item
+  }
+}
+```
+
+### Slab Elevation Query
+
+```tsx
+import { spatialGridManager } from '@pascal-app/core'
+
+function getFloorHeight(levelId: string, x: number, z: number) {
+  const elevation = spatialGridManager.getSlabElevationAt(levelId, x, z)
+  return elevation // 0 if on ground level, > 0 if on raised slab
+}
+
+// For an item with rotation
+function getItemFloorHeight(
+  levelId: string,
+  position: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number]
+) {
+  return spatialGridManager.getSlabElevationForItem(
+    levelId,
+    position,
+    dimensions,
+    rotation
+  )
+}
+```
+
+### Moving an Item
+
+```tsx
+import { spatialGridManager } from '@pascal-app/core'
+import useScene from '@pascal-app/core'
+
+function moveItem(
+  itemId: string,
+  levelId: string,
+  newPosition: [number, number, number],
+  dimensions: [number, number, number],
+  rotation: [number, number, number]
+) {
+  // Check if new position is valid (ignore the item being moved)
+  const result = spatialGridManager.canPlaceOnFloor(
+    levelId,
+    newPosition,
+    dimensions,
+    rotation,
+    [itemId] // Ignore self
+  )
+  
+  if (result.valid) {
+    // Update item position
+    const updateNode = useScene.getState().updateNode
+    updateNode(itemId, { position: newPosition })
+  } else {
+    console.warn('Cannot move item - would collide with:', result.conflictIds)
+  }
+}
+```
+
+### Syncing with Scene Store
+
+```tsx
+import { spatialGridManager } from '@pascal-app/core'
+import useScene from '@pascal-app/core'
+
+// Initialize sync (called once at app startup)
+import { initSpatialGridSync } from '@pascal-app/core'
+initSpatialGridSync()
+
+// The sync automatically handles:
+// - Node creation → handleNodeCreated
+// - Node updates → handleNodeUpdated
+// - Node deletion → handleNodeDeleted
+```
+
+## Performance Characteristics
+
+- **Cell-based spatial indexing**: O(1) average case for insertion and queries
+- **Separate grids per level**: Queries only check relevant level
+- **Bounding box culling**: Only detailed geometry checks for nearby items
+- **Efficient polygon tests**: Ray casting algorithm is O(n) where n = polygon vertices
+
+## See Also
+
+- [Scene Store](/api/core/scene-store) - State management
+- [Scene Registry](/api/core/scene-registry) - Three.js object registry
+- [Package Overview](/api/core/overview) - Full exports list

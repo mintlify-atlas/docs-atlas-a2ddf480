@@ -1,0 +1,435 @@
+---
+title: Systems
+description: Understanding the system pattern for geometry generation and scene updates
+---
+
+## Overview
+
+**Systems** are React components that run in the render loop (`useFrame`) to update 3D geometry and transforms. They process **dirty nodes** marked by the store and use the **scene registry** to access Three.js objects directly.
+
+## System Pattern
+
+Systems follow a consistent pattern:
+
+1. Subscribe to `dirtyNodes` from the scene store
+2. Run in `useFrame` (called every frame by React Three Fiber)
+3. Check for dirty nodes of their target type
+4. Update Three.js geometry via scene registry
+5. Clear dirty flag when complete
+
+```typescript
+import { useFrame } from '@react-three/fiber'
+import useScene from '@pascal-app/core/store/use-scene'
+import { sceneRegistry } from '@pascal-app/core/hooks/scene-registry'
+
+export const WallSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame(() => {
+    if (dirtyNodes.size === 0) return
+
+    const nodes = useScene.getState().nodes
+
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (!node || node.type !== 'wall') return
+
+      const mesh = sceneRegistry.nodes.get(id) as THREE.Mesh
+      if (mesh) {
+        updateWallGeometry(node, mesh)
+        clearDirty(id)
+      }
+      // If mesh not found, keep it dirty for next frame
+    })
+  }, 4) // Priority 4 (walls update after slabs)
+
+  return null
+}
+```
+
+Location: `packages/core/src/systems/wall/wall-system.tsx:26-81`
+
+## Core Systems
+
+The `@pascal-app/core` package provides systems for geometry generation:
+
+### WallSystem
+
+Generates wall geometry with advanced features:
+- **Mitering** at wall junctions (corners and T-junctions)
+- **CSG cutouts** for doors, windows, and items
+- **Slab elevation** integration (walls extend below or sit on slabs)
+
+```typescript
+function updateWallGeometry(wallId: string, miterData: WallMiterData) {
+  const nodes = useScene.getState().nodes
+  const node = nodes[wallId]
+  if (!node || node.type !== 'wall') return
+
+  const mesh = sceneRegistry.nodes.get(wallId) as THREE.Mesh
+  if (!mesh) return
+
+  const levelId = resolveLevelId(node, nodes)
+  const slabElevation = spatialGridManager.getSlabElevationForWall(
+    levelId,
+    node.start,
+    node.end
+  )
+
+  const childrenIds = node.children || []
+  const childrenNodes = childrenIds
+    .map((childId) => nodes[childId])
+    .filter((n): n is AnyNode => n !== undefined)
+
+  const newGeo = generateExtrudedWall(node, childrenNodes, miterData, slabElevation)
+
+  mesh.geometry.dispose()
+  mesh.geometry = newGeo
+  mesh.position.set(node.start[0], slabElevation, node.start[1])
+  const angle = Math.atan2(node.end[1] - node.start[1], node.end[0] - node.start[0])
+  mesh.rotation.y = -angle
+}
+```
+
+Location: `packages/core/src/systems/wall/wall-system.tsx:106-137`
+
+#### Wall Mitering
+
+The system calculates miter joints at wall junctions using computational geometry:
+
+```typescript
+export function calculateLevelMiters(walls: WallNode[]): WallMiterData {
+  const getThickness = (wall: WallNode) => wall.thickness ?? 0.1
+  const junctions = findJunctions(walls)
+  const junctionData: JunctionData = new Map()
+
+  for (const [key, junction] of junctions.entries()) {
+    const wallIntersections = calculateJunctionIntersections(junction, getThickness)
+    junctionData.set(key, wallIntersections)
+  }
+
+  return { junctionData, junctions }
+}
+```
+
+Location: `packages/core/src/systems/wall/wall-mitering.ts:254-265`
+
+<Info>
+Mitering ensures clean corner and T-junction geometry without gaps or overlaps, even with walls of different thicknesses.
+</Info>
+
+### SlabSystem
+
+Generates floor slab geometry from polygons:
+
+```typescript
+export const SlabSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame(() => {
+    if (dirtyNodes.size === 0) return
+
+    const nodes = useScene.getState().nodes
+
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (!node || node.type !== 'slab') return
+
+      const mesh = sceneRegistry.nodes.get(id) as THREE.Mesh
+      if (mesh) {
+        updateSlabGeometry(node, mesh)
+        clearDirty(id)
+      }
+    })
+  }, 1) // Priority 1 (slabs update first)
+
+  return null
+}
+```
+
+Location: `packages/core/src/systems/slab/slab-system.tsx:11-35`
+
+The geometry generator handles:
+- Polygon extrusion
+- Holes for openings (stairs, shafts)
+- Automatic outset to extend under walls
+
+```typescript
+function updateSlabGeometry(node: SlabNode, mesh: THREE.Mesh) {
+  const newGeo = generateSlabGeometry(node)
+  mesh.geometry.dispose()
+  mesh.geometry = newGeo
+}
+
+export function generateSlabGeometry(slabNode: SlabNode): THREE.BufferGeometry {
+  const polygon = outsetPolygon(slabNode.polygon, SLAB_OUTSET)
+  const elevation = slabNode.elevation ?? 0.05
+
+  // Create shape from polygon
+  const shape = new THREE.Shape()
+  const firstPt = polygon[0]!
+  shape.moveTo(firstPt[0], -firstPt[1])
+
+  for (let i = 1; i < polygon.length; i++) {
+    const pt = polygon[i]!
+    shape.lineTo(pt[0], -pt[1])
+  }
+  shape.closePath()
+
+  // Add holes
+  for (const holePolygon of slabNode.holes || []) {
+    const holePath = new THREE.Path()
+    // ... hole creation logic
+    shape.holes.push(holePath)
+  }
+
+  // Extrude and rotate
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: elevation,
+    bevelEnabled: false,
+  })
+  geometry.rotateX(-Math.PI / 2)
+  geometry.computeVertexNormals()
+
+  return geometry
+}
+```
+
+Location: `packages/core/src/systems/slab/slab-system.tsx:40-155`
+
+### ItemSystem
+
+Positions items based on their attachment mode:
+
+```typescript
+export const ItemSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame(() => {
+    if (dirtyNodes.size === 0) return
+    const nodes = useScene.getState().nodes
+
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (!node || node.type !== 'item') return
+
+      const item = node as ItemNode
+      const mesh = sceneRegistry.nodes.get(id) as THREE.Object3D
+      if (!mesh) return
+
+      if (item.asset.attachTo === 'wall-side') {
+        // Wall-attached: offset by half wall thickness
+        const parentWall = item.parentId ? nodes[item.parentId] : undefined
+        if (parentWall && parentWall.type === 'wall') {
+          const wallThickness = parentWall.thickness ?? 0.1
+          const side = item.side === 'front' ? 1 : -1
+          mesh.position.z = (wallThickness / 2) * side
+        }
+      } else if (!item.asset.attachTo) {
+        // Floor item: elevate by slab height
+        const parentNode = item.parentId ? nodes[item.parentId] : undefined
+        if (parentNode?.type !== 'item') {
+          const levelId = resolveLevelId(item, nodes)
+          const slabElevation = spatialGridManager.getSlabElevationForItem(
+            levelId,
+            item.position,
+            getScaledDimensions(item),
+            item.rotation,
+          )
+          mesh.position.y = slabElevation + item.position[1]
+        }
+      }
+
+      clearDirty(id)
+    })
+  }, 2) // Priority 2 (items update after slabs)
+
+  return null
+}
+```
+
+Location: `packages/core/src/systems/item/item-system.tsx:13-58`
+
+### CeilingSystem
+
+Generates ceiling geometry (similar pattern to SlabSystem).
+
+Location: `packages/core/src/systems/ceiling/ceiling-system.tsx`
+
+### RoofSystem
+
+Generates roof geometry from roof nodes.
+
+Location: `packages/core/src/systems/roof/roof-system.tsx`
+
+### WindowSystem & DoorSystem
+
+Handle specialized item types for windows and doors.
+
+Location: `packages/core/src/systems/window/window-system.tsx`, `packages/core/src/systems/door/door-system.tsx`
+
+## System Priority
+
+Systems run at different priorities (second argument to `useFrame`):
+
+```typescript
+useFrame(() => { /* ... */ }, priority)
+```
+
+| Priority | System | Reason |
+|----------|--------|--------|
+| 1 | SlabSystem | Slabs must update first (other systems query slab elevations) |
+| 2 | ItemSystem | Items need slab elevations to position correctly |
+| 4 | WallSystem | Walls need slab elevations for base positioning |
+
+<Note>
+Lower priority numbers run **first**. This ensures slabs update before systems that depend on slab elevation data.
+</Note>
+
+## Scene Registry Integration
+
+Systems access Three.js objects through the **scene registry**:
+
+```typescript
+import { sceneRegistry } from '@pascal-app/core/hooks/scene-registry'
+
+// Get mesh by node ID
+const mesh = sceneRegistry.nodes.get(wallId) as THREE.Mesh
+
+// Get all nodes of a type
+const allWallIds = sceneRegistry.byType.get('wall') // Set<string>
+```
+
+The registry is populated by renderers using the `useRegistry` hook:
+
+```tsx
+import { useRegistry } from '@pascal-app/core/hooks/scene-registry'
+
+function WallRenderer({ node }: { node: WallNode }) {
+  const ref = useRef<Mesh>(null!)
+  useRegistry(node.id, 'wall', ref) // Register mesh in registry
+
+  return (
+    <mesh ref={ref}>
+      <boxGeometry args={[0, 0, 0]} /> {/* Placeholder, WallSystem updates */}
+      <meshStandardMaterial />
+    </mesh>
+  )
+}
+```
+
+## Processing Dirty Nodes
+
+Systems only process nodes marked as dirty:
+
+```typescript
+useFrame(() => {
+  if (dirtyNodes.size === 0) return // Early exit if nothing to do
+
+  const nodes = useScene.getState().nodes
+
+  dirtyNodes.forEach((id) => {
+    const node = nodes[id]
+    if (!node || node.type !== 'wall') return // Type filter
+
+    const mesh = sceneRegistry.nodes.get(id) as THREE.Mesh
+    if (!mesh) return // Skip if mesh not registered yet (keep dirty)
+
+    // Update geometry
+    updateWallGeometry(node, mesh)
+    
+    // Clear dirty flag
+    clearDirty(id)
+  })
+})
+```
+
+### Cascade Updates
+
+Some systems need to update adjacent nodes:
+
+```typescript
+// WallSystem: update adjacent walls that share junctions
+const adjacentWallIds = getAdjacentWallIds(levelWalls, dirtyWallIds)
+for (const wallId of adjacentWallIds) {
+  if (!dirtyWallIds.has(wallId)) {
+    const mesh = sceneRegistry.nodes.get(wallId) as THREE.Mesh
+    if (mesh) {
+      updateWallGeometry(wallId, miterData)
+    }
+  }
+}
+```
+
+Location: `packages/core/src/systems/wall/wall-system.tsx:68-76`
+
+<Info>
+Adjacent walls are updated **without** clearing their dirty flag, as they may be dirty for other reasons.
+</Info>
+
+## Custom Systems
+
+You can create custom systems following the same pattern:
+
+```typescript
+import { useFrame } from '@react-three/fiber'
+import useScene from '@pascal-app/core/store/use-scene'
+import { sceneRegistry } from '@pascal-app/core/hooks/scene-registry'
+
+export const CustomSystem = () => {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+
+  useFrame(() => {
+    if (dirtyNodes.size === 0) return
+
+    const nodes = useScene.getState().nodes
+
+    dirtyNodes.forEach((id) => {
+      const node = nodes[id]
+      if (!node || node.type !== 'custom') return
+
+      const object = sceneRegistry.nodes.get(id)
+      if (!object) return
+
+      // Your custom update logic here
+      updateCustomGeometry(node, object)
+
+      clearDirty(id)
+    })
+  }, 3) // Choose appropriate priority
+
+  return null
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Early Exit" icon="right-from-bracket">
+    Check `dirtyNodes.size === 0` first to avoid unnecessary work
+  </Card>
+  
+  <Card title="Type Filter" icon="filter">
+    Filter by node type early to skip irrelevant nodes
+  </Card>
+  
+  <Card title="Mesh Check" icon="cube">
+    Check if mesh is registered before updating (keep dirty if not)
+  </Card>
+  
+  <Card title="Dispose Geometry" icon="trash">
+    Always dispose old geometry before replacing: `mesh.geometry.dispose()`
+  </Card>
+  
+  <Card title="Clear Dirty" icon="check">
+    Only clear dirty flag after successful update
+  </Card>
+  
+  <Card title="Priority Order" icon="arrow-down-1-9">
+    Set priority based on dependencies (lower = earlier)
+  </Card>
+</CardGroup>

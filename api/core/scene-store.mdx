@@ -1,0 +1,366 @@
+---
+title: "useScene"
+description: "Zustand store for scene state management with undo/redo and persistence"
+---
+
+# useScene
+
+The `useScene` hook is the main state store for Pascal's scene graph. It's built with Zustand and includes middleware for undo/redo (temporal) and localStorage persistence.
+
+## Import
+
+```tsx
+import useScene from '@pascal-app/core'
+```
+
+## State Structure
+
+### SceneState
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  Flat dictionary of all nodes in the scene, keyed by node ID.
+</ParamField>
+
+<ParamField path="rootNodeIds" type="AnyNodeId[]">
+  Array of root-level node IDs (typically contains a single SiteNode ID).
+</ParamField>
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that have been modified and need revalidation by systems (wall physics, item collision, etc.).
+</ParamField>
+
+## Methods
+
+### Scene Management
+
+#### loadScene
+
+```tsx
+loadScene(): void
+```
+
+Loads the default scene if none exists. Creates a hierarchy: `Site → Building → Level`.
+
+<Expandable title="Implementation Details">
+  - Checks if `rootNodeIds` is already populated
+  - If empty, creates a default hierarchy with one level
+  - Marks all existing nodes as dirty to trigger re-validation
+</Expandable>
+
+#### clearScene
+
+```tsx
+clearScene(): void
+```
+
+Clears all nodes and resets to default scene.
+
+#### setScene
+
+```tsx
+setScene(nodes: Record<AnyNodeId, AnyNode>, rootNodeIds: AnyNodeId[]): void
+```
+
+Replaces entire scene with new nodes.
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>" required>
+  Complete node dictionary
+</ParamField>
+
+<ParamField path="rootNodeIds" type="AnyNodeId[]" required>
+  Root node IDs for the new scene
+</ParamField>
+
+<Expandable title="Backward Compatibility">
+  Automatically patches ItemNode instances saved before the `scale` property was added by adding a default scale of `[1, 1, 1]`.
+</Expandable>
+
+### Dirty Node Tracking
+
+#### markDirty
+
+```tsx
+markDirty(id: AnyNodeId): void
+```
+
+Marks a node as dirty, indicating it needs revalidation.
+
+<ParamField path="id" type="AnyNodeId" required>
+  Node ID to mark dirty
+</ParamField>
+
+#### clearDirty
+
+```tsx
+clearDirty(id: AnyNodeId): void
+```
+
+Removes a node from the dirty set after revalidation.
+
+<ParamField path="id" type="AnyNodeId" required>
+  Node ID to clear
+</ParamField>
+
+### Node Operations
+
+#### createNode
+
+```tsx
+createNode(node: AnyNode, parentId?: AnyNodeId): void
+```
+
+Creates a single node and optionally adds it to a parent's children array.
+
+<ParamField path="node" type="AnyNode" required>
+  The node to create (must have a unique `id`)
+</ParamField>
+
+<ParamField path="parentId" type="AnyNodeId">
+  Optional parent node ID. If provided, the node will be added to the parent's `children` array.
+</ParamField>
+
+#### createNodes
+
+```tsx
+createNodes(ops: { node: AnyNode; parentId?: AnyNodeId }[]): void
+```
+
+Batch create multiple nodes in a single operation.
+
+<ParamField path="ops" type="{ node: AnyNode; parentId?: AnyNodeId }[]" required>
+  Array of node creation operations
+</ParamField>
+
+#### updateNode
+
+```tsx
+updateNode(id: AnyNodeId, data: Partial<AnyNode>): void
+```
+
+Updates a single node with partial data.
+
+<ParamField path="id" type="AnyNodeId" required>
+  ID of the node to update
+</ParamField>
+
+<ParamField path="data" type="Partial<AnyNode>" required>
+  Partial node data to merge with existing node
+</ParamField>
+
+#### updateNodes
+
+```tsx
+updateNodes(updates: { id: AnyNodeId; data: Partial<AnyNode> }[]): void
+```
+
+Batch update multiple nodes in a single operation.
+
+<ParamField path="updates" type="{ id: AnyNodeId; data: Partial<AnyNode> }[]" required>
+  Array of update operations
+</ParamField>
+
+#### deleteNode
+
+```tsx
+deleteNode(id: AnyNodeId): void
+```
+
+Deletes a single node and its descendants.
+
+<ParamField path="id" type="AnyNodeId" required>
+  ID of the node to delete
+</ParamField>
+
+#### deleteNodes
+
+```tsx
+deleteNodes(ids: AnyNodeId[]): void
+```
+
+Batch delete multiple nodes.
+
+<ParamField path="ids" type="AnyNodeId[]" required>
+  Array of node IDs to delete
+</ParamField>
+
+## Middleware
+
+### Temporal (Undo/Redo)
+
+Provided by `zundo`. Access undo/redo state via:
+
+```tsx
+const undo = useScene.temporal.getState().undo
+const redo = useScene.temporal.getState().redo
+const pastStates = useScene.temporal.getState().pastStates
+const futureStates = useScene.temporal.getState().futureStates
+```
+
+**Configuration:**
+- **Partialized state**: Only `nodes` and `rootNodeIds` are tracked in history
+- **Limit**: Last 50 actions
+- **Auto re-validation**: After undo/redo, all nodes are marked dirty to trigger system revalidation
+
+### Persist (LocalStorage)
+
+Provided by `zustand/middleware/persist`.
+
+**Configuration:**
+- **Storage key**: `editor-storage`
+- **Version**: 1
+- **Partialized state**: Only `nodes` (excluding transient nodes) and `rootNodeIds` are persisted
+- **Transient nodes**: Nodes with `metadata.isTransient === true` are excluded from persistence
+
+<Expandable title="Migration Logic">
+  - **ItemNode scale migration**: Adds default `scale: [1, 1, 1]` to items saved before scale was added
+  - **SiteNode wrapper migration**: Wraps old scenes (where root is not a SiteNode) in a new SiteNode on hydration
+</Expandable>
+
+## Usage Examples
+
+### Basic Usage
+
+```tsx
+import useScene from '@pascal-app/core'
+
+function MyComponent() {
+  // Select specific state
+  const nodes = useScene((state) => state.nodes)
+  const createNode = useScene((state) => state.createNode)
+  
+  // Access all state
+  const scene = useScene()
+  
+  return <div>Node count: {Object.keys(nodes).length}</div>
+}
+```
+
+### Creating Nodes
+
+```tsx
+import { WallNode } from '@pascal-app/core'
+import useScene from '@pascal-app/core'
+
+const createNode = useScene((state) => state.createNode)
+const levelId = 'level-123'
+
+// Create a wall
+const wall = WallNode.parse({
+  start: [0, 0],
+  end: [5, 0],
+  height: 2.5,
+  thickness: 0.2,
+})
+
+createNode(wall, levelId)
+```
+
+### Batch Operations
+
+```tsx
+const createNodes = useScene((state) => state.createNodes)
+
+const walls = [
+  { node: wall1, parentId: levelId },
+  { node: wall2, parentId: levelId },
+  { node: wall3, parentId: levelId },
+]
+
+createNodes(walls)
+```
+
+### Updating Nodes
+
+```tsx
+const updateNode = useScene((state) => state.updateNode)
+
+// Move a wall endpoint
+updateNode(wallId, { end: [10, 0] })
+```
+
+### Undo/Redo
+
+```tsx
+function UndoRedoButtons() {
+  const undo = () => useScene.temporal.getState().undo()
+  const redo = () => useScene.temporal.getState().redo()
+  
+  const canUndo = useScene.temporal((state) => state.pastStates.length > 0)
+  const canRedo = useScene.temporal((state) => state.futureStates.length > 0)
+  
+  return (
+    <>
+      <button onClick={undo} disabled={!canUndo}>Undo</button>
+      <button onClick={redo} disabled={!canRedo}>Redo</button>
+    </>
+  )
+}
+```
+
+### Dirty Node System
+
+```tsx
+// Mark node for revalidation after modification
+const markDirty = useScene((state) => state.markDirty)
+const clearDirty = useScene((state) => state.clearDirty)
+
+// Update wall and mark dirty
+updateNode(wallId, { end: [10, 0] })
+markDirty(wallId)
+
+// In a system component (runs each frame)
+function WallSystem() {
+  const dirtyNodes = useScene((state) => state.dirtyNodes)
+  const clearDirty = useScene((state) => state.clearDirty)
+  
+  useFrame(() => {
+    dirtyNodes.forEach((nodeId) => {
+      // Validate/update node
+      processWall(nodeId)
+      
+      // Clear dirty flag
+      clearDirty(nodeId)
+    })
+  })
+  
+  return null
+}
+```
+
+## Type Definitions
+
+```tsx
+export type SceneState = {
+  // Data
+  nodes: Record<AnyNodeId, AnyNode>
+  rootNodeIds: AnyNodeId[]
+  dirtyNodes: Set<AnyNodeId>
+
+  // Scene management
+  loadScene: () => void
+  clearScene: () => void
+  setScene: (nodes: Record<AnyNodeId, AnyNode>, rootNodeIds: AnyNodeId[]) => void
+
+  // Dirty tracking
+  markDirty: (id: AnyNodeId) => void
+  clearDirty: (id: AnyNodeId) => void
+
+  // Node operations
+  createNode: (node: AnyNode, parentId?: AnyNodeId) => void
+  createNodes: (ops: { node: AnyNode; parentId?: AnyNodeId }[]) => void
+  updateNode: (id: AnyNodeId, data: Partial<AnyNode>) => void
+  updateNodes: (updates: { id: AnyNodeId; data: Partial<AnyNode> }[]) => void
+  deleteNode: (id: AnyNodeId) => void
+  deleteNodes: (ids: AnyNodeId[]) => void
+}
+
+type UseSceneStore = UseBoundStore<StoreApi<SceneState>> & {
+  temporal: StoreApi<TemporalState<Pick<SceneState, 'nodes' | 'rootNodeIds'>>>
+}
+```
+
+## See Also
+
+- [Scene Registry](/api/core/scene-registry) - Three.js object registry
+- [Spatial Grid Manager](/api/core/spatial-grid) - Collision detection
+- [Package Overview](/api/core/overview) - Full exports list

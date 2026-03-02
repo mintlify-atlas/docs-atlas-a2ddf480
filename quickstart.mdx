@@ -1,80 +1,459 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Build your first 3D architectural scene with Pascal Editor in 5 minutes
 ---
 
-## Get started in three steps
+This guide will help you create a working 3D building editor with Pascal Editor. You'll learn how to set up the viewer, create nodes, and interact with the scene.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Make sure you've completed the [installation](/installation) steps and have both `@pascal-app/core` and `@pascal-app/viewer` installed.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Create your first scene
 
-### Step 2: Deploy your changes
+<Steps>
+  <Step title="Set up the Viewer component">
+    The `Viewer` component provides a complete 3D rendering environment with WebGPU, camera controls, lighting, and systems. It fills its parent container, so make sure to set width and height.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```tsx App.tsx
+    'use client'
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    import { Viewer } from '@pascal-app/viewer'
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    export default function App() {
+      return (
+        <div style={{ width: '100vw', height: '100vh' }}>
+          <Viewer />
+        </div>
+      )
+    }
+    ```
 
-### Step 3: Go live
+    When you run this, you'll see an empty 3D scene with a default Site → Building → Level hierarchy. The camera can be controlled with mouse drag (orbit) and scroll (zoom).
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Create a wall">
+    Let's add a wall to the scene. We'll use the `useScene` store to create nodes and the `WallNode` schema to validate our data.
+
+    ```tsx App.tsx
+    'use client'
+
+    import { useEffect } from 'react'
+    import { useScene, WallNode } from '@pascal-app/core'
+    import { Viewer, useViewer } from '@pascal-app/viewer'
+
+    function SceneSetup() {
+      useEffect(() => {
+        const scene = useScene.getState()
+        
+        // Find the default level
+        const levelId = Object.values(scene.nodes).find(
+          node => node.type === 'level'
+        )?.id
+        
+        if (!levelId) return
+
+        // Create a wall
+        const wall = WallNode.parse({
+          start: [0, 0],
+          end: [5, 0],
+          thickness: 0.15,
+          height: 3.0
+        })
+
+        // Add wall to the level
+        scene.createNode(wall, levelId)
+
+        // Select the building to view the wall
+        const buildingId = Object.values(scene.nodes).find(
+          node => node.type === 'building'
+        )?.id
+        
+        if (buildingId) {
+          useViewer.getState().setSelection({ buildingId, levelId })
+        }
+      }, [])
+
+      return null
+    }
+
+    export default function App() {
+      return (
+        <div style={{ width: '100vw', height: '100vh' }}>
+          <Viewer>
+            <SceneSetup />
+          </Viewer>
+        </div>
+      )
+    }
+    ```
+
+    You should now see a 3D wall rendered in the scene! The wall is 5 meters long, 0.15 meters thick, and 3 meters high.
+
+    <Info>
+      The `WallSystem` automatically generates geometry for the wall based on the start/end points, thickness, and height. The geometry is created in the render loop after the node is marked dirty.
+    </Info>
+  </Step>
+
+  <Step title="Add multiple walls to create a room">
+    Let's create a simple rectangular room by adding four walls:
+
+    ```tsx App.tsx
+    'use client'
+
+    import { useEffect } from 'react'
+    import { useScene, WallNode } from '@pascal-app/core'
+    import { Viewer, useViewer } from '@pascal-app/viewer'
+
+    function SceneSetup() {
+      useEffect(() => {
+        const scene = useScene.getState()
+        
+        const levelId = Object.values(scene.nodes).find(
+          node => node.type === 'level'
+        )?.id
+        
+        if (!levelId) return
+
+        // Create four walls forming a 5x4 meter room
+        const walls = [
+          { start: [0, 0], end: [5, 0] },     // South wall
+          { start: [5, 0], end: [5, 4] },     // East wall
+          { start: [5, 4], end: [0, 4] },     // North wall
+          { start: [0, 4], end: [0, 0] },     // West wall
+        ]
+
+        walls.forEach(({ start, end }) => {
+          const wall = WallNode.parse({
+            start,
+            end,
+            thickness: 0.15,
+            height: 3.0
+          })
+          scene.createNode(wall, levelId)
+        })
+
+        // Center camera on the room
+        const buildingId = Object.values(scene.nodes).find(
+          node => node.type === 'building'
+        )?.id
+        
+        if (buildingId) {
+          useViewer.getState().setSelection({ buildingId, levelId })
+        }
+      }, [])
+
+      return null
+    }
+
+    export default function App() {
+      return (
+        <div style={{ width: '100vw', height: '100vh' }}>
+          <Viewer>
+            <SceneSetup />
+          </Viewer>
+        </div>
+      )
+    }
+    ```
+
+    You now have a complete room with four walls! Notice how the walls automatically miter at the corners - this is handled by the `WallSystem`.
+  </Step>
+
+  <Step title="Add a floor slab">
+    Let's add a floor to our room using a `SlabNode`:
+
+    ```tsx App.tsx
+    'use client'
+
+    import { useEffect } from 'react'
+    import { useScene, WallNode, SlabNode } from '@pascal-app/core'
+    import { Viewer, useViewer } from '@pascal-app/viewer'
+
+    function SceneSetup() {
+      useEffect(() => {
+        const scene = useScene.getState()
+        
+        const levelId = Object.values(scene.nodes).find(
+          node => node.type === 'level'
+        )?.id
+        
+        if (!levelId) return
+
+        // Create a floor slab
+        const slab = SlabNode.parse({
+          polygon: [
+            [0, 0],
+            [5, 0],
+            [5, 4],
+            [0, 4]
+          ],
+          thickness: 0.2,
+          elevation: 0
+        })
+        scene.createNode(slab, levelId)
+
+        // Create four walls
+        const walls = [
+          { start: [0, 0], end: [5, 0] },
+          { start: [5, 0], end: [5, 4] },
+          { start: [5, 4], end: [0, 4] },
+          { start: [0, 4], end: [0, 0] },
+        ]
+
+        walls.forEach(({ start, end }) => {
+          const wall = WallNode.parse({
+            start,
+            end,
+            thickness: 0.15,
+            height: 3.0
+          })
+          scene.createNode(wall, levelId)
+        })
+
+        const buildingId = Object.values(scene.nodes).find(
+          node => node.type === 'building'
+        )?.id
+        
+        if (buildingId) {
+          useViewer.getState().setSelection({ buildingId, levelId })
+        }
+      }, [])
+
+      return null
+    }
+
+    export default function App() {
+      return (
+        <div style={{ width: '100vw', height: '100vh' }}>
+          <Viewer>
+            <SceneSetup />
+          </Viewer>
+        </div>
+      )
+    }
+    ```
+
+    Your room now has a floor! The `SlabSystem` generates geometry from the polygon points.
+  </Step>
+
+  <Step title="Update nodes reactively">
+    Pascal Editor's state management is reactive. Let's add a button to change wall height:
+
+    ```tsx App.tsx
+    'use client'
+
+    import { useEffect, useState } from 'react'
+    import { useScene, WallNode, SlabNode } from '@pascal-app/core'
+    import { Viewer, useViewer } from '@pascal-app/viewer'
+
+    function SceneSetup() {
+      const [wallIds, setWallIds] = useState<string[]>([])
+
+      useEffect(() => {
+        const scene = useScene.getState()
+        
+        const levelId = Object.values(scene.nodes).find(
+          node => node.type === 'level'
+        )?.id
+        
+        if (!levelId) return
+
+        // Create floor
+        const slab = SlabNode.parse({
+          polygon: [[0, 0], [5, 0], [5, 4], [0, 4]],
+          thickness: 0.2,
+          elevation: 0
+        })
+        scene.createNode(slab, levelId)
+
+        // Create walls and save their IDs
+        const walls = [
+          { start: [0, 0], end: [5, 0] },
+          { start: [5, 0], end: [5, 4] },
+          { start: [5, 4], end: [0, 4] },
+          { start: [0, 4], end: [0, 0] },
+        ]
+
+        const ids = walls.map(({ start, end }) => {
+          const wall = WallNode.parse({
+            start,
+            end,
+            thickness: 0.15,
+            height: 3.0
+          })
+          scene.createNode(wall, levelId)
+          return wall.id
+        })
+
+        setWallIds(ids)
+
+        const buildingId = Object.values(scene.nodes).find(
+          node => node.type === 'building'
+        )?.id
+        
+        if (buildingId) {
+          useViewer.getState().setSelection({ buildingId, levelId })
+        }
+      }, [])
+
+      const increaseWallHeight = () => {
+        const scene = useScene.getState()
+        wallIds.forEach(id => {
+          const wall = scene.nodes[id]
+          if (wall && wall.type === 'wall') {
+            scene.updateNode(id, { height: (wall.height || 3.0) + 0.5 })
+          }
+        })
+      }
+
+      return (
+        <button
+          onClick={increaseWallHeight}
+          style={{
+            position: 'absolute',
+            top: 20,
+            left: 20,
+            padding: '10px 20px',
+            fontSize: '14px',
+            zIndex: 1000,
+            cursor: 'pointer'
+          }}
+        >
+          Increase Wall Height
+        </button>
+      )
+    }
+
+    export default function App() {
+      return (
+        <div style={{ width: '100vw', height: '100vh' }}>
+          <Viewer>
+            <SceneSetup />
+          </Viewer>
+        </div>
+      )
+    }
+    ```
+
+    Click the button and watch the walls grow! The `WallSystem` automatically regenerates geometry when nodes are updated.
+
+    <Tip>
+      Changes to nodes are automatically persisted to IndexedDB. Refresh the page and your scene will be restored. Use `Cmd+Z` / `Ctrl+Z` to undo changes (50-step history).
+    </Tip>
+  </Step>
+</Steps>
+
+## Understanding the code
+
+### Node creation pattern
+
+All nodes follow this pattern:
+
+1. **Parse with schema** - `WallNode.parse({ ... })` validates the data and generates an ID
+2. **Create in store** - `scene.createNode(node, parentId)` adds it to the scene
+3. **System generates geometry** - `WallSystem` detects the dirty node and creates Three.js geometry
+
+### Accessing state
+
+There are two ways to access state:
+
+**In React components** (subscribes to changes):
+```typescript
+const nodes = useScene((state) => state.nodes)
+const levelId = useViewer((state) => state.selection.levelId)
+```
+
+**Outside React** (callbacks, systems):
+```typescript
+const node = useScene.getState().nodes[id]
+useViewer.getState().setSelection({ levelId: 'level_123' })
+```
+
+### Scene hierarchy
+
+Nodes are stored flat but organized hierarchically:
+
+```typescript
+// Stored as flat dictionary
+{
+  'site_abc': { id: 'site_abc', type: 'site', children: ['building_xyz'] },
+  'building_xyz': { id: 'building_xyz', type: 'building', parentId: 'site_abc', children: ['level_123'] },
+  'level_123': { id: 'level_123', type: 'level', parentId: 'building_xyz', children: ['wall_456'] },
+  'wall_456': { id: 'wall_456', type: 'wall', parentId: 'level_123', start: [0,0], end: [5,0] }
+}
+```
+
+This flat structure enables O(1) lookups while maintaining parent-child relationships.
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core concepts" icon="book" href="/concepts/architecture">
+    Deep dive into nodes, systems, and state management
+  </Card>
+  
+  <Card title="Node types" icon="shapes" href="/api/nodes/base">
+    Explore all available node types and their properties
+  </Card>
+  
+  <Card title="Event handling" icon="bolt" href="/guides/event-handling">
+    Learn how to handle user interactions with the event bus
+  </Card>
+  
+  <Card title="Custom systems" icon="gear" href="/guides/custom-systems">
+    Build your own geometry systems
+  </Card>
 </CardGroup>
 
+## Common patterns
+
+### Finding nodes by type
+
+```typescript
+const scene = useScene.getState()
+const walls = Object.values(scene.nodes).filter(node => node.type === 'wall')
+```
+
+### Listening to node events
+
+```typescript
+import { emitter } from '@pascal-app/core'
+
+emitter.on('wall:click', (event) => {
+  console.log('Wall clicked:', event.node.id)
+  console.log('Click position:', event.position)
+})
+```
+
+### Changing viewer settings
+
+```typescript
+import { useViewer } from '@pascal-app/viewer'
+
+// Switch to dark theme
+useViewer.getState().setTheme('dark')
+
+// Change level display mode
+useViewer.getState().setLevelMode('exploded')
+
+// Switch to orthographic camera
+useViewer.getState().setCameraMode('orthographic')
+```
+
+### Batch node updates
+
+```typescript
+const scene = useScene.getState()
+
+// Update multiple nodes at once
+scene.updateNodes([
+  { id: 'wall_1', data: { height: 4.0 } },
+  { id: 'wall_2', data: { height: 4.0 } },
+  { id: 'wall_3', data: { height: 4.0 } }
+])
+```
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Batch operations are more efficient than individual updates as they trigger a single state update.
 </Note>

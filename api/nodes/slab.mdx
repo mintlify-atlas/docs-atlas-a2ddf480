@@ -1,0 +1,322 @@
+---
+title: "SlabNode"
+description: "Node representing a floor slab with polygon boundary and elevation"
+---
+
+## Overview
+
+The `SlabNode` represents a floor slab (floor surface) within a level. Slabs are defined by a polygon boundary in 2D space with an elevation value. They can also have holes cut out (e.g., for stairs or atriums).
+
+**Key features**:
+- Polygon-based floor definition
+- Support for holes (voids in the floor)
+- Configurable elevation for multi-level floors
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const SlabNode = BaseNode.extend({
+  id: objectId('slab'),
+  type: nodeType('slab'),
+  polygon: z.array(z.tuple([z.number(), z.number()])),
+  holes: z.array(z.array(z.tuple([z.number(), z.number()]))).default([]),
+  elevation: z.number().default(0.05),
+})
+
+type SlabNode = z.infer<typeof SlabNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/slab.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique slab identifier.
+  
+  **Format**: `slab_{randomString}`
+  
+  **Example**: `"slab_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"slab"`.
+  
+  **Default**: `"slab"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the slab.
+  
+  **Example**: `"Main Floor"`, `"Living Room Floor"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent level's ID.
+  
+  **Example**: `"level_abc123"`
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls slab visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the slab.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the slab.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Slab-Specific Fields
+
+<ParamField path="polygon" type="Array<[number, number]>" required>
+  Array of 2D points defining the slab boundary.
+  
+  **Format**: Array of `[x, z]` coordinates in meters
+  
+  **Example**:
+  ```json
+  [
+    [0, 0],
+    [8, 0],
+    [8, 6],
+    [0, 6]
+  ]
+  ```
+  
+  The polygon should be closed (the renderer will automatically connect the last point to the first). Points are defined in the level coordinate system.
+</ParamField>
+
+<ParamField path="holes" type="Array<Array<[number, number]>>">
+  Array of polygons defining holes (voids) in the slab.
+  
+  **Default**: `[]`
+  
+  **Format**: Array of polygons, where each polygon is an array of `[x, z]` coordinates
+  
+  **Example**:
+  ```json
+  [
+    [
+      [2, 2],
+      [3, 2],
+      [3, 3],
+      [2, 3]
+    ]
+  ]
+  ```
+  
+  Holes are used for features like:
+  - Stairwells
+  - Elevator shafts
+  - Atriums
+  - Floor openings
+</ParamField>
+
+<ParamField path="elevation" type="number" required>
+  Elevation of the slab surface in meters.
+  
+  **Default**: `0.05` (5cm above level datum)
+  
+  **Example**: `0.0` (at level datum), `0.1` (10cm raised floor)
+  
+  The elevation is relative to the level's base elevation. Use this for:
+  - Slightly raised finished floors
+  - Stepped floor sections
+  - Platform areas
+</ParamField>
+
+## Example
+
+```typescript
+import { SlabNode } from '@pascal/core/schema/nodes/slab'
+
+const slab: SlabNode = {
+  object: 'node',
+  id: 'slab_abc123',
+  type: 'slab',
+  name: 'Living Room Floor',
+  parentId: 'level_xyz789',
+  visible: true,
+  polygon: [
+    [0, 0],
+    [8, 0],
+    [8, 6],
+    [0, 6],
+  ],
+  holes: [],
+  elevation: 0.05,
+  metadata: {
+    material: 'hardwood',
+    area: 48, // square meters
+  },
+}
+```
+
+## Usage
+
+### Creating a Simple Rectangular Slab
+
+```typescript
+import { SlabNode } from '@pascal/core/schema/nodes/slab'
+
+const slab = SlabNode.parse({
+  polygon: [
+    [0, 0],
+    [10, 0],
+    [10, 8],
+    [0, 8],
+  ],
+})
+// Creates a 10m x 8m rectangular floor
+```
+
+### Creating an L-Shaped Slab
+
+```typescript
+const lShapedSlab = SlabNode.parse({
+  name: 'L-Shaped Floor',
+  polygon: [
+    [0, 0],
+    [8, 0],
+    [8, 4],
+    [4, 4],
+    [4, 8],
+    [0, 8],
+  ],
+  elevation: 0.05,
+})
+```
+
+### Creating a Slab with a Hole
+
+```typescript
+const slabWithStairwell = SlabNode.parse({
+  name: 'Floor with Stairwell',
+  polygon: [
+    [0, 0],
+    [12, 0],
+    [12, 10],
+    [0, 10],
+  ],
+  holes: [
+    // Stairwell opening
+    [
+      [5, 4],
+      [7, 4],
+      [7, 6],
+      [5, 6],
+    ],
+  ],
+  elevation: 0.05,
+})
+```
+
+### Creating a Slab with Multiple Holes
+
+```typescript
+const slabWithMultipleOpenings = SlabNode.parse({
+  name: 'Floor with Multiple Openings',
+  polygon: [
+    [0, 0],
+    [15, 0],
+    [15, 12],
+    [0, 12],
+  ],
+  holes: [
+    // Stairwell
+    [
+      [2, 2],
+      [4, 2],
+      [4, 4],
+      [2, 4],
+    ],
+    // Elevator shaft
+    [
+      [11, 2],
+      [13, 2],
+      [13, 4],
+      [11, 4],
+    ],
+    // Atrium
+    [
+      [6, 5],
+      [9, 5],
+      [9, 9],
+      [6, 9],
+    ],
+  ],
+  elevation: 0.0,
+})
+```
+
+### Raised Platform Area
+
+```typescript
+const platform = SlabNode.parse({
+  name: 'Stage Platform',
+  polygon: [
+    [0, 0],
+    [4, 0],
+    [4, 3],
+    [0, 3],
+  ],
+  elevation: 0.3, // 30cm raised platform
+})
+```
+
+## Slab Geometry
+
+The slab is rendered as a flat surface:
+- **Shape**: Defined by the polygon boundary
+- **Voids**: Defined by the holes array
+- **Vertical position**: Determined by level elevation + slab elevation
+
+```
+Top View:
+┌─────────────────┐
+│                 │
+│    ┌─────┐      │  ← Hole (void)
+│    │     │      │
+│    └─────┘      │
+│                 │
+└─────────────────┘
+← Polygon boundary
+
+Side View:
+─────────────────── ← Slab surface (elevation: 0.05m)
+═════════════════── ← Level datum (elevation: 0m)
+```
+
+## Coordinate System
+
+Slabs use 2D coordinates in the level's XZ plane:
+- X axis: horizontal (left-right)
+- Z axis: horizontal (front-back)
+- Y axis: vertical (determined by level elevation + slab elevation)
+
+## Use Cases
+
+- **Floor surfaces** for rooms and spaces
+- **Platform areas** with different elevations
+- **Outdoor terraces** and balconies
+- **Multi-level floors** with steps
+- **Complex floor plans** with cutouts for stairs, elevators, or atriums
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [LevelNode](/api/nodes/level) - Parent node containing slabs
+- [ZoneNode](/api/nodes/zone) - Zones that define room boundaries (similar polygon structure)

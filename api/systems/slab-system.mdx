@@ -1,0 +1,221 @@
+---
+title: 'SlabSystem'
+description: 'React component that generates extruded floor geometry from polygons'
+---
+
+## Overview
+
+The `SlabSystem` is a React component that processes dirty slab nodes and generates 3D floor geometry. It supports:
+
+- **Polygon-based geometry** with arbitrary shapes
+- **Hole support** for cutouts (stairs, shafts)
+- **Automatic outset** to extend under walls
+- **Configurable elevation** for raised floors
+
+The system runs in a `useFrame` hook at priority `1`, ensuring slabs update early in the frame.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/slab/slab-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Monitor dirty nodes">
+The system watches the `dirtyNodes` set for nodes with `type === 'slab'`.
+</Step>
+
+<Step title="Update geometry">
+For each dirty slab:
+- Generate new geometry from the polygon
+- Apply automatic outset to extend under walls
+- Add holes to the shape
+- Dispose old geometry and replace it
+</Step>
+
+<Step title="Clear dirty flag">
+Once the mesh is updated, the node is removed from `dirtyNodes`.
+</Step>
+</Steps>
+
+### Geometry Generation
+
+The `generateSlabGeometry()` function:
+
+1. **Outset polygon** by `SLAB_OUTSET` (0.05m) to extend under walls
+2. **Create THREE.Shape** from polygon points
+3. **Add holes** from the `holes` array
+4. **Extrude shape** by `elevation` amount
+5. **Rotate** so extrusion becomes vertical (Y-axis)
+
+## Props
+
+The `SlabSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need geometry updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### SlabNode Schema
+
+The system processes `SlabNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique slab identifier
+</ParamField>
+
+<ParamField path="polygon" type="Array<[number, number]>" required>
+  Array of `[x, z]` coordinates defining the slab boundary in level coordinates
+</ParamField>
+
+<ParamField path="holes" type="Array<Array<[number, number]>>" default="[]">
+  Array of polygons representing holes in the slab (for stairs, shafts, etc.)
+</ParamField>
+
+<ParamField path="elevation" type="number" default="0.05">
+  Slab thickness/elevation in meters
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+
+## Polygon Outset
+
+The `outsetPolygon()` function expands a polygon outward by a uniform distance:
+
+<Steps>
+<Step title="Determine winding">
+Calculate signed area to detect clockwise vs counter-clockwise winding.
+</Step>
+
+<Step title="Offset edges">
+Move each edge outward (perpendicular to edge direction) by the outset amount.
+</Step>
+
+<Step title="Intersect edges">
+Find intersections between consecutive offset edges to get new vertices.
+</Step>
+</Steps>
+
+This ensures slabs extend slightly under walls (by default `0.05m` = half wall thickness) to prevent gaps.
+
+```typescript
+const SLAB_OUTSET = 0.05 // Half of default wall thickness
+const polygon = outsetPolygon(slabNode.polygon, SLAB_OUTSET)
+```
+
+## Usage Example
+
+```tsx
+import { SlabSystem } from '@pascal/core/systems/slab/slab-system'
+import { useScene } from '@pascal/core/store/use-scene'
+
+function createSlab() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const slab = {
+    id: 'slab_1',
+    type: 'slab',
+    parentId: 'level_1',
+    polygon: [
+      [0, 0],
+      [5, 0],
+      [5, 5],
+      [0, 5],
+    ],
+    elevation: 0.1,
+    holes: [],
+  }
+  
+  addNode(slab)
+  markDirty(slab.id)
+}
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <SlabSystem />
+    </Canvas>
+  )
+}
+```
+
+## Coordinate System
+
+Slabs use the **level coordinate system**:
+
+- **X-axis**: Horizontal (left-right)
+- **Y-axis**: Vertical (height)
+- **Z-axis**: Horizontal (forward-back)
+
+Polygon coordinates are in the `[x, z]` plane, and extrusion happens along the Y-axis.
+
+## Holes
+
+Slabs support multiple holes for architectural features:
+
+```typescript
+const slabWithHoles = {
+  id: 'slab_2',
+  type: 'slab',
+  polygon: [
+    [0, 0], [10, 0], [10, 10], [0, 10]
+  ],
+  holes: [
+    // Stairwell opening
+    [
+      [2, 2], [4, 2], [4, 4], [2, 4]
+    ],
+    // Elevator shaft
+    [
+      [6, 6], [8, 6], [8, 8], [6, 8]
+    ],
+  ],
+  elevation: 0.15,
+}
+```
+
+Holes are:
+- Defined as polygons in the same coordinate system
+- Automatically converted to THREE.Path and added to the shape
+- Properly extruded through the entire slab thickness
+
+## Performance Notes
+
+- Only updates dirty slabs (not all slabs every frame)
+- Disposes old geometry before creating new geometry
+- Runs at priority `1` (early in frame) so other systems can use updated geometry
+
+## Integration with Other Systems
+
+### Spatial Grid
+
+After slab geometry is generated, the spatial grid system uses slab elevations to:
+- Position wall bases correctly
+- Elevate floor items to the right height
+- Calculate item placement on raised floors
+
+### Wall System
+
+Walls query the spatial grid for slab elevation to:
+- Adjust wall base height
+- Extend walls downward for negative slab elevations
+- Preserve wall top height regardless of floor level
+
+## Related
+
+- [WallSystem](/api/systems/wall-system) - Manages wall geometry with mitering
+- [CeilingSystem](/api/systems/ceiling-system) - Manages ceiling geometry
+- [ItemSystem](/api/systems/item-system) - Positions items on slabs

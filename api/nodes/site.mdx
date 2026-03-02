@@ -1,0 +1,243 @@
+---
+title: "SiteNode"
+description: "Root node representing a construction site with property boundaries and buildings"
+---
+
+## Overview
+
+The `SiteNode` is the root node of the scene graph hierarchy. It represents a construction site with a property boundary polygon and contains buildings and items.
+
+**Key features**:
+- Defines property boundary as a 2D polygon
+- Contains buildings and site-level items
+- Root of the scene graph (no parent)
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+import { BuildingNode } from './building'
+import { ItemNode } from './item'
+
+const PropertyLineData = z.object({
+  type: z.literal('polygon'),
+  points: z.array(z.tuple([z.number(), z.number()])),
+})
+
+const SiteNode = BaseNode.extend({
+  id: objectId('site'),
+  type: nodeType('site'),
+  polygon: PropertyLineData.optional().default({
+    type: 'polygon',
+    points: [
+      [-15, -15],
+      [15, -15],
+      [15, 15],
+      [-15, 15],
+    ],
+  }),
+  children: z
+    .array(z.discriminatedUnion('type', [BuildingNode, ItemNode]))
+    .default([BuildingNode.parse({})]),
+})
+
+type SiteNode = z.infer<typeof SiteNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/site.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique site identifier.
+  
+  **Format**: `site_{randomString}`
+  
+  **Example**: `"site_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"site"`.
+  
+  **Default**: `"site"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the site.
+  
+  **Example**: `"Downtown Development Project"`
+</ParamField>
+
+<ParamField path="parentId" type="null" required>
+  Always `null` for site nodes (root of hierarchy).
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls site visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the site.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the site.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Site-Specific Fields
+
+<ParamField path="polygon" type="PropertyLineData">
+  Property boundary defined as a 2D polygon.
+  
+  **Structure**:
+  ```typescript
+  {
+    type: 'polygon',
+    points: Array<[number, number]>  // [x, z] coordinates
+  }
+  ```
+  
+  **Default**: 30x30 meter square centered at origin:
+  ```json
+  {
+    "type": "polygon",
+    "points": [
+      [-15, -15],
+      [15, -15],
+      [15, 15],
+      [-15, 15]
+    ]
+  }
+  ```
+  
+  The points define the property line boundary in the site coordinate system. Points are in [x, z] format (y is up).
+</ParamField>
+
+<ParamField path="children" type="Array<BuildingNode | ItemNode>" required>
+  Array of buildings and items on the site.
+  
+  **Default**: Creates one default building: `[BuildingNode.parse({})]`
+  
+  Children can be:
+  - **BuildingNode**: Structures on the site
+  - **ItemNode**: Site furniture, equipment, or other 3D objects
+  
+  The children array uses a discriminated union on the `type` field for type safety.
+</ParamField>
+
+## Example
+
+```typescript
+import { SiteNode } from '@pascal/core/schema/nodes/site'
+
+const site: SiteNode = {
+  object: 'node',
+  id: 'site_abc123',
+  type: 'site',
+  name: 'Campus Expansion',
+  parentId: null,
+  visible: true,
+  metadata: {
+    address: '123 Main St',
+    city: 'Springfield',
+  },
+  polygon: {
+    type: 'polygon',
+    points: [
+      [-20, -20],
+      [20, -20],
+      [20, 20],
+      [-20, 20],
+    ],
+  },
+  children: [
+    {
+      id: 'building_xyz789',
+      type: 'building',
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      // ... other building fields
+    },
+  ],
+}
+```
+
+## Usage
+
+### Creating a Site
+
+```typescript
+import { SiteNode } from '@pascal/core/schema/nodes/site'
+
+// Parse with defaults
+const site = SiteNode.parse({
+  name: 'My Site',
+})
+// Result: Creates a site with default 30x30 polygon and one building
+```
+
+### Custom Property Boundary
+
+```typescript
+const site = SiteNode.parse({
+  name: 'Custom Site',
+  polygon: {
+    type: 'polygon',
+    points: [
+      [0, 0],
+      [50, 0],
+      [50, 30],
+      [25, 40],
+      [0, 30],
+    ],
+  },
+})
+```
+
+### Adding Buildings
+
+```typescript
+import { BuildingNode } from '@pascal/core/schema/nodes/building'
+
+const building1 = BuildingNode.parse({
+  name: 'Building A',
+  position: [-10, 0, -10],
+})
+
+const building2 = BuildingNode.parse({
+  name: 'Building B',
+  position: [10, 0, 10],
+})
+
+const site = SiteNode.parse({
+  name: 'Multi-Building Site',
+  children: [building1, building2],
+})
+```
+
+## Hierarchy
+
+```
+SiteNode (root)
+├── BuildingNode
+│   └── LevelNode
+│       ├── WallNode
+│       ├── SlabNode
+│       └── ZoneNode
+└── ItemNode (site-level items)
+```
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [BuildingNode](/api/nodes/building) - Buildings within a site
+- [ItemNode](/api/nodes/item) - Items on the site

@@ -1,0 +1,421 @@
+---
+title: Event Handling
+description: Respond to user interactions with your 3D scene using the event system
+---
+
+The Pascal Editor SDK provides a comprehensive event system for handling user interactions with 3D objects. Events are emitted through a centralized event bus, making it easy to build interactive tools and features.
+
+## Understanding the Event System
+
+Events in Pascal Editor follow a predictable pattern:
+- **Event names** combine the node type with an action: `wall:click`, `item:enter`, `grid:move`
+- **Event data** includes the node, position, and native Three.js event
+- **Event propagation** can be stopped to prevent parent handlers from firing
+
+<Note>
+All events are typed, providing autocomplete and type safety when subscribing to events.
+</Note>
+
+## Available Events
+
+Every node type supports these interaction events:
+
+- `click` - User clicked on the object
+- `double-click` - User double-clicked on the object
+- `move` - Mouse moved over the object
+- `enter` - Mouse entered the object bounds
+- `leave` - Mouse left the object bounds
+- `pointerdown` - Mouse button pressed on the object
+- `pointerup` - Mouse button released on the object
+- `context-menu` - Right-click on the object
+
+### Event Types by Node
+
+```typescript
+// Node events
+'wall:click' | 'wall:move' | 'wall:enter' | 'wall:leave' | ...
+'item:click' | 'item:move' | 'item:enter' | 'item:leave' | ...
+'slab:click' | 'slab:move' | 'slab:enter' | 'slab:leave' | ...
+'zone:click' | 'zone:move' | 'zone:enter' | 'zone:leave' | ...
+'ceiling:click' | 'ceiling:move' | 'ceiling:enter' | ...
+'roof:click' | 'roof:move' | 'roof:enter' | ...
+'window:click' | 'window:move' | 'window:enter' | ...
+'door:click' | 'door:move' | 'door:enter' | ...
+
+// Grid events (when clicking on empty space)
+'grid:click' | 'grid:move' | 'grid:enter' | ...
+
+// Camera control events
+'camera-controls:view' | 'camera-controls:capture' | ...
+
+// Tool events
+'tool:cancel'
+```
+
+## Subscribing to Events
+
+<Steps>
+  <Step title="Import the event emitter">
+    ```typescript
+    import { emitter } from '@pascal-app/core'
+    ```
+  </Step>
+
+  <Step title="Subscribe to an event">
+    Use `emitter.on()` to listen for events:
+
+    ```typescript
+    import { emitter, type WallEvent } from '@pascal-app/core'
+
+    // Subscribe to wall clicks
+    const handleWallClick = (event: WallEvent) => {
+      console.log('Wall clicked:', event.node.id)
+      console.log('Click position:', event.position)
+    }
+
+    emitter.on('wall:click', handleWallClick)
+    ```
+  </Step>
+
+  <Step title="Clean up subscriptions">
+    Always unsubscribe when your component unmounts:
+
+    ```typescript
+    import { useEffect } from 'react'
+
+    useEffect(() => {
+      const handleWallClick = (event: WallEvent) => {
+        // Handle event
+      }
+
+      emitter.on('wall:click', handleWallClick)
+
+      // Cleanup function
+      return () => {
+        emitter.off('wall:click', handleWallClick)
+      }
+    }, [])
+    ```
+  </Step>
+</Steps>
+
+## Event Data Structure
+
+Each event provides rich contextual information:
+
+### NodeEvent Structure
+
+```typescript
+interface NodeEvent<T extends AnyNode = AnyNode> {
+  node: T                              // The node that was interacted with
+  position: [number, number, number]   // World-space click position
+  localPosition: [number, number, number] // Local-space position relative to node
+  normal?: [number, number, number]    // Surface normal at click point
+  stopPropagation: () => void          // Prevent parent handlers from firing
+  nativeEvent: ThreeEvent<PointerEvent> // Original Three.js event
+}
+```
+
+### GridEvent Structure
+
+```typescript
+interface GridEvent {
+  position: [number, number, number]   // Grid click position
+  nativeEvent: ThreeEvent<PointerEvent>
+}
+```
+
+## Common Event Patterns
+
+### Selecting Items on Click
+
+```typescript
+import { emitter, type ItemEvent } from '@pascal-app/core'
+import { useViewer } from '@pascal-app/viewer'
+
+function setupItemSelection() {
+  const handleItemClick = (event: ItemEvent) => {
+    // Set the selected item in the viewer state
+    useViewer.getState().setSelection({
+      nodeId: event.node.id,
+      type: 'item',
+    })
+
+    // Prevent event from bubbling to grid click
+    event.stopPropagation()
+  }
+
+  emitter.on('item:click', handleItemClick)
+
+  return () => emitter.off('item:click', handleItemClick)
+}
+```
+
+### Hover Highlighting
+
+```typescript
+import { emitter, type WallEvent } from '@pascal-app/core'
+import { sceneRegistry } from '@pascal-app/core'
+import type * as THREE from 'three'
+
+function setupWallHover() {
+  const handleWallEnter = (event: WallEvent) => {
+    const mesh = sceneRegistry.nodes.get(event.node.id) as THREE.Mesh
+    if (!mesh) return
+
+    // Highlight the wall
+    mesh.material.color.setHex(0x4080ff)
+  }
+
+  const handleWallLeave = (event: WallEvent) => {
+    const mesh = sceneRegistry.nodes.get(event.node.id) as THREE.Mesh
+    if (!mesh) return
+
+    // Remove highlight
+    mesh.material.color.setHex(0xffffff)
+  }
+
+  emitter.on('wall:enter', handleWallEnter)
+  emitter.on('wall:leave', handleWallLeave)
+
+  return () => {
+    emitter.off('wall:enter', handleWallEnter)
+    emitter.off('wall:leave', handleWallLeave)
+  }
+}
+```
+
+### Context Menu on Right-Click
+
+```typescript
+import { emitter, type ItemEvent } from '@pascal-app/core'
+
+function setupContextMenu() {
+  const handleContextMenu = (event: ItemEvent) => {
+    // Prevent default browser context menu
+    event.nativeEvent.nativeEvent.preventDefault()
+
+    // Show custom context menu
+    showContextMenu({
+      x: event.nativeEvent.nativeEvent.clientX,
+      y: event.nativeEvent.nativeEvent.clientY,
+      options: [
+        { label: 'Delete', action: () => deleteItem(event.node.id) },
+        { label: 'Duplicate', action: () => duplicateItem(event.node.id) },
+        { label: 'Properties', action: () => showProperties(event.node.id) },
+      ],
+    })
+
+    event.stopPropagation()
+  }
+
+  emitter.on('item:context-menu', handleContextMenu)
+
+  return () => emitter.off('item:context-menu', handleContextMenu)
+}
+```
+
+### Grid Click for Placement
+
+```typescript
+import { emitter, type GridEvent } from '@pascal-app/core'
+import { useScene, ItemNode } from '@pascal-app/core'
+
+function setupItemPlacement(asset: Asset) {
+  const handleGridClick = (event: GridEvent) => {
+    const [x, y, z] = event.position
+
+    // Create item at click position
+    const item = ItemNode.parse({
+      position: [x, y, z],
+      rotation: [0, 0, 0],
+      asset: asset,
+    })
+
+    const currentLevelId = useViewer.getState().selection.levelId
+    useScene.getState().createNode(item, currentLevelId)
+  }
+
+  emitter.on('grid:click', handleGridClick)
+
+  return () => emitter.off('grid:click', handleGridClick)
+}
+```
+
+## Stopping Event Propagation
+
+Use `stopPropagation()` to prevent events from bubbling up:
+
+```typescript
+import { emitter } from '@pascal-app/core'
+
+// Handle item clicks
+emitter.on('item:click', (event) => {
+  console.log('Item clicked:', event.node.id)
+  event.stopPropagation() // Don't trigger grid:click
+})
+
+// This won't fire when clicking items
+emitter.on('grid:click', (event) => {
+  console.log('Grid clicked:', event.position)
+})
+```
+
+<Tip>
+Always call `stopPropagation()` when handling object-specific events to prevent unintended grid interactions.
+</Tip>
+
+## Event-Driven Tool Architecture
+
+Build interactive tools using event subscriptions:
+
+```typescript
+import { emitter } from '@pascal-app/core'
+import { useEffect, useState } from 'react'
+
+function useWallDrawingTool() {
+  const [startPoint, setStartPoint] = useState<[number, number, number] | null>(null)
+
+  useEffect(() => {
+    const handleGridClick = (event: GridEvent) => {
+      const [x, , z] = event.position
+
+      if (!startPoint) {
+        // First click: set start point
+        setStartPoint([x, 0, z])
+      } else {
+        // Second click: create wall
+        const wall = WallNode.parse({
+          start: [startPoint[0], startPoint[2]],
+          end: [x, z],
+          thickness: 0.2,
+          height: 2.7,
+        })
+
+        const currentLevelId = useViewer.getState().selection.levelId
+        useScene.getState().createNode(wall, currentLevelId)
+
+        // Reset for next wall
+        setStartPoint(null)
+      }
+    }
+
+    const handleCancel = () => {
+      setStartPoint(null)
+    }
+
+    emitter.on('grid:click', handleGridClick)
+    emitter.on('tool:cancel', handleCancel)
+
+    return () => {
+      emitter.off('grid:click', handleGridClick)
+      emitter.off('tool:cancel', handleCancel)
+    }
+  }, [startPoint])
+
+  return { isDrawing: startPoint !== null }
+}
+```
+
+## Camera Control Events
+
+Control the camera programmatically:
+
+```typescript
+import { emitter } from '@pascal-app/core'
+
+// Focus camera on a specific node
+emitter.emit('camera-controls:view', { nodeId: wallId })
+
+// Switch to top-down view
+emitter.emit('camera-controls:top-view', undefined)
+
+// Orbit camera
+emitter.emit('camera-controls:orbit-cw', undefined) // Clockwise
+emitter.emit('camera-controls:orbit-ccw', undefined) // Counter-clockwise
+
+// Generate thumbnail
+emitter.emit('camera-controls:generate-thumbnail', { projectId: 'proj_123' })
+```
+
+## Typed Event Handlers
+
+TypeScript provides full type safety for event handlers:
+
+```typescript
+import { emitter, type WallEvent, type ItemEvent, type GridEvent } from '@pascal-app/core'
+
+// TypeScript knows the exact shape of each event
+emitter.on('wall:click', (event: WallEvent) => {
+  event.node // WallNode
+  event.node.start // [number, number]
+  event.node.thickness // number | undefined
+})
+
+emitter.on('item:click', (event: ItemEvent) => {
+  event.node // ItemNode
+  event.node.asset // Asset
+  event.node.position // [number, number, number]
+})
+
+emitter.on('grid:click', (event: GridEvent) => {
+  event.position // [number, number, number]
+  // event.node - TypeScript error: GridEvent has no 'node' property
+})
+```
+
+## Best Practices
+
+### Always Unsubscribe
+
+```typescript
+useEffect(() => {
+  const handler = (event) => { /* ... */ }
+  emitter.on('item:click', handler)
+  return () => emitter.off('item:click', handler) // Critical!
+}, [])
+```
+
+<Warning>
+Failing to unsubscribe causes memory leaks and duplicate event handlers.
+</Warning>
+
+### Use stopPropagation Wisely
+
+```typescript
+// Good: Stop propagation for specific object interactions
+emitter.on('wall:click', (event) => {
+  selectWall(event.node.id)
+  event.stopPropagation() // Don't trigger grid click
+})
+
+// Bad: Stopping propagation unnecessarily
+emitter.on('item:move', (event) => {
+  updateHoverState(event.node.id)
+  event.stopPropagation() // Usually not needed for hover
+})
+```
+
+### Debounce High-Frequency Events
+
+```typescript
+import { debounce } from 'lodash'
+
+const handleMouseMove = debounce((event: ItemEvent) => {
+  // Expensive operation
+  updateTooltip(event.node)
+}, 100)
+
+emitter.on('item:move', handleMouseMove)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Nodes" icon="cube" href="/guides/creating-nodes">
+    Learn how to create nodes in response to events
+  </Card>
+  <Card title="Custom Systems" icon="gears" href="/guides/custom-systems">
+    Build systems that react to events
+  </Card>
+</CardGroup>

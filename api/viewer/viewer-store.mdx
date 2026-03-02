@@ -1,0 +1,542 @@
+---
+title: "useViewer Hook"
+description: "Zustand store for managing viewer state and preferences"
+---
+
+## Overview
+
+The `useViewer` hook provides centralized state management for the 3D viewer. It's built with Zustand and includes persistence for user preferences like camera mode, theme, and display settings.
+
+## Import
+
+```tsx
+import { useViewer } from '@pascal-app/viewer'
+```
+
+## Usage
+
+```tsx
+function ViewerControls() {
+  const { theme, setTheme, cameraMode, setCameraMode } = useViewer()
+  
+  return (
+    <div>
+      <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+        Theme: {theme}
+      </button>
+      <button onClick={() => setCameraMode(cameraMode === 'perspective' ? 'orthographic' : 'perspective')}>
+        Camera: {cameraMode}
+      </button>
+    </div>
+  )
+}
+```
+
+## State Properties
+
+### Selection
+
+<ParamField path="selection" type="SelectionPath">
+  Current selection state in the scene hierarchy.
+  
+  ```typescript
+  type SelectionPath = {
+    buildingId: string | null
+    levelId: string | null
+    zoneId: string | null
+    selectedIds: string[]  // For multi-select items/assets
+  }
+  ```
+</ParamField>
+
+<ParamField path="hoveredId" type="string | null">
+  ID of the currently hovered node or zone.
+</ParamField>
+
+### Camera & Rendering
+
+<ParamField path="cameraMode" type="'perspective' | 'orthographic'">
+  Current camera projection mode.
+  
+  - `'perspective'` - Standard perspective camera (default)
+  - `'orthographic'` - Orthographic camera for technical drawings
+  
+  **Persisted**: Yes
+</ParamField>
+
+<ParamField path="theme" type="'light' | 'dark'">
+  Visual theme for the viewer.
+  
+  - `'light'` - Light background (#ffffff)
+  - `'dark'` - Dark background (#1f2433)
+  
+  **Persisted**: Yes
+</ParamField>
+
+### Display Modes
+
+<ParamField path="levelMode" type="'stacked' | 'exploded' | 'solo' | 'manual'">
+  How levels are displayed vertically.
+  
+  - `'stacked'` - Levels stacked normally (default)
+  - `'exploded'` - Levels separated with gaps for clarity
+  - `'solo'` - Only selected level visible
+  - `'manual'` - Custom positioning
+  
+  **Persisted**: Yes
+</ParamField>
+
+<ParamField path="wallMode" type="'up' | 'cutaway' | 'down'">
+  Wall display mode.
+  
+  - `'up'` - Walls fully visible (default)
+  - `'cutaway'` - Walls cut away for interior view
+  - `'down'` - Walls hidden
+  
+  **Persisted**: Yes
+</ParamField>
+
+### Visibility Toggles
+
+<ParamField path="showScans" type="boolean">
+  Whether to display scan data/point clouds.
+  
+  **Default**: `true`  
+  **Persisted**: Per-project (in `projectPreferences`)
+</ParamField>
+
+<ParamField path="showGuides" type="boolean">
+  Whether to display construction guides and measurements.
+  
+  **Default**: `true`  
+  **Persisted**: Per-project (in `projectPreferences`)
+</ParamField>
+
+<ParamField path="showGrid" type="boolean">
+  Whether to display the reference grid.
+  
+  **Default**: `true`  
+  **Persisted**: Per-project (in `projectPreferences`)
+</ParamField>
+
+### Project Settings
+
+<ParamField path="projectId" type="string | null">
+  Currently active project ID. Used to load project-specific preferences.
+</ParamField>
+
+<ParamField path="projectPreferences" type="Record<string, ProjectPrefs>">
+  Per-project settings for scans, guides, and grid visibility.
+  
+  ```typescript
+  type ProjectPrefs = {
+    showScans?: boolean
+    showGuides?: boolean
+    showGrid?: boolean
+  }
+  ```
+  
+  **Persisted**: Yes
+</ParamField>
+
+### Advanced State
+
+<ParamField path="outliner" type="Outliner">
+  Direct references to selected and hovered Three.js Object3D instances. Used by the outline post-processing effect.
+  
+  ```typescript
+  type Outliner = {
+    selectedObjects: Object3D[]
+    hoveredObjects: Object3D[]
+  }
+  ```
+  
+  **Note**: This is manipulated directly (no setter) for performance.
+</ParamField>
+
+<ParamField path="exportScene" type="(() => Promise<void>) | null">
+  Export function reference. Set by export utilities.
+</ParamField>
+
+<ParamField path="cameraDragging" type="boolean">
+  Whether the camera is currently being dragged. Used to disable certain interactions during camera movement.
+</ParamField>
+
+## Methods
+
+### Selection Methods
+
+<ParamField path="setSelection" type="(updates: Partial<SelectionPath>) => void">
+  Update the selection state. Automatically resets child selections when parent changes.
+  
+  ```tsx
+  const { setSelection } = useViewer()
+  
+  // Select a building (clears level, zone, and items)
+  setSelection({ buildingId: 'building-123' })
+  
+  // Select a level (clears zone and items)
+  setSelection({ levelId: 'level-456' })
+  
+  // Select items
+  setSelection({ selectedIds: ['item-1', 'item-2'] })
+  ```
+  
+  **Hierarchy Guard**: When selecting a parent node, child selections are automatically cleared unless explicitly provided in the update.
+</ParamField>
+
+<ParamField path="resetSelection" type="() => void">
+  Clear all selections.
+  
+  ```tsx
+  const { resetSelection } = useViewer()
+  resetSelection()
+  ```
+</ParamField>
+
+<ParamField path="setHoveredId" type="(id: string | null) => void">
+  Set the currently hovered node ID.
+  
+  ```tsx
+  const { setHoveredId } = useViewer()
+  setHoveredId('wall-789')
+  ```
+</ParamField>
+
+### Camera & Display Methods
+
+<ParamField path="setCameraMode" type="(mode: 'perspective' | 'orthographic') => void">
+  Switch between perspective and orthographic camera modes.
+  
+  ```tsx
+  const { setCameraMode } = useViewer()
+  setCameraMode('orthographic')
+  ```
+</ParamField>
+
+<ParamField path="setTheme" type="(theme: 'light' | 'dark') => void">
+  Change the viewer theme.
+  
+  ```tsx
+  const { setTheme } = useViewer()
+  setTheme('dark')
+  ```
+</ParamField>
+
+<ParamField path="setLevelMode" type="(mode: 'stacked' | 'exploded' | 'solo' | 'manual') => void">
+  Change how levels are displayed.
+  
+  ```tsx
+  const { setLevelMode } = useViewer()
+  setLevelMode('exploded')
+  ```
+</ParamField>
+
+<ParamField path="setWallMode" type="(mode: 'up' | 'cutaway' | 'down') => void">
+  Change wall display mode.
+  
+  ```tsx
+  const { setWallMode } = useViewer()
+  setWallMode('cutaway')
+  ```
+</ParamField>
+
+### Visibility Methods
+
+<ParamField path="setShowScans" type="(show: boolean) => void">
+  Toggle scan visibility. Automatically saves to project preferences.
+  
+  ```tsx
+  const { setShowScans } = useViewer()
+  setShowScans(false)
+  ```
+</ParamField>
+
+<ParamField path="setShowGuides" type="(show: boolean) => void">
+  Toggle guide visibility. Automatically saves to project preferences.
+  
+  ```tsx
+  const { setShowGuides } = useViewer()
+  setShowGuides(false)
+  ```
+</ParamField>
+
+<ParamField path="setShowGrid" type="(show: boolean) => void">
+  Toggle grid visibility. Automatically saves to project preferences.
+  
+  ```tsx
+  const { setShowGrid } = useViewer()
+  setShowGrid(false)
+  ```
+</ParamField>
+
+### Project Methods
+
+<ParamField path="setProjectId" type="(id: string | null) => void">
+  Set the active project ID and load its preferences.
+  
+  ```tsx
+  const { setProjectId } = useViewer()
+  setProjectId('project-123')
+  ```
+  
+  **Note**: When a new project is loaded, the hook automatically restores that project's scan/guide/grid visibility settings.
+</ParamField>
+
+### Advanced Methods
+
+<ParamField path="setExportScene" type="(fn: (() => Promise<void>) | null) => void">
+  Set the scene export function reference.
+  
+  ```tsx
+  const { setExportScene } = useViewer()
+  setExportScene(async () => {
+    // Export logic
+  })
+  ```
+</ParamField>
+
+<ParamField path="setCameraDragging" type="(dragging: boolean) => void">
+  Set camera dragging state.
+  
+  ```tsx
+  const { setCameraDragging } = useViewer()
+  setCameraDragging(true)
+  ```
+</ParamField>
+
+## TypeScript Signatures
+
+```typescript
+import type { AnyNode, BaseNode, BuildingNode, LevelNode, ZoneNode } from '@pascal-app/core'
+import type { Object3D } from 'three'
+
+type SelectionPath = {
+  buildingId: BuildingNode['id'] | null
+  levelId: LevelNode['id'] | null
+  zoneId: ZoneNode['id'] | null
+  selectedIds: BaseNode['id'][]
+}
+
+type Outliner = {
+  selectedObjects: Object3D[]
+  hoveredObjects: Object3D[]
+}
+
+type ViewerState = {
+  // Selection
+  selection: SelectionPath
+  hoveredId: AnyNode['id'] | ZoneNode['id'] | null
+  setHoveredId: (id: AnyNode['id'] | ZoneNode['id'] | null) => void
+
+  // Camera & Theme
+  cameraMode: 'perspective' | 'orthographic'
+  setCameraMode: (mode: 'perspective' | 'orthographic') => void
+  theme: 'light' | 'dark'
+  setTheme: (theme: 'light' | 'dark') => void
+
+  // Display Modes
+  levelMode: 'stacked' | 'exploded' | 'solo' | 'manual'
+  setLevelMode: (mode: 'stacked' | 'exploded' | 'solo' | 'manual') => void
+  wallMode: 'up' | 'cutaway' | 'down'
+  setWallMode: (mode: 'up' | 'cutaway' | 'down') => void
+
+  // Visibility
+  showScans: boolean
+  setShowScans: (show: boolean) => void
+  showGuides: boolean
+  setShowGuides: (show: boolean) => void
+  showGrid: boolean
+  setShowGrid: (show: boolean) => void
+
+  // Project
+  projectId: string | null
+  setProjectId: (id: string | null) => void
+  projectPreferences: Record<string, {
+    showScans?: boolean
+    showGuides?: boolean
+    showGrid?: boolean
+  }>
+
+  // Selection Methods
+  setSelection: (updates: Partial<SelectionPath>) => void
+  resetSelection: () => void
+
+  // Advanced
+  outliner: Outliner
+  exportScene: (() => Promise<void>) | null
+  setExportScene: (fn: (() => Promise<void>) | null) => void
+  cameraDragging: boolean
+  setCameraDragging: (dragging: boolean) => void
+}
+
+const useViewer: () => ViewerState
+```
+
+## Persistence
+
+The following state is automatically persisted to `localStorage` under the key `'viewer-preferences'`:
+
+- `cameraMode`
+- `theme`
+- `levelMode`
+- `wallMode`
+- `projectPreferences`
+
+Other state (like `selection`, `hoveredId`) is ephemeral and resets on page reload.
+
+## Examples
+
+### Selection Management
+
+```tsx
+import { useViewer } from '@pascal-app/viewer'
+import { useScene } from '@pascal-app/core'
+
+function BuildingSelector() {
+  const { nodes } = useScene()
+  const { selection, setSelection } = useViewer()
+  
+  const buildings = Object.values(nodes).filter(
+    node => node?.type === 'building'
+  )
+  
+  return (
+    <select
+      value={selection.buildingId || ''}
+      onChange={(e) => setSelection({ buildingId: e.target.value || null })}
+    >
+      <option value="">No Selection</option>
+      {buildings.map(building => (
+        <option key={building.id} value={building.id}>
+          {building.name}
+        </option>
+      ))}
+    </select>
+  )
+}
+```
+
+### Display Controls
+
+```tsx
+import { useViewer } from '@pascal-app/viewer'
+
+function DisplayControls() {
+  const {
+    levelMode,
+    setLevelMode,
+    wallMode,
+    setWallMode,
+    showScans,
+    setShowScans,
+    showGuides,
+    setShowGuides,
+  } = useViewer()
+  
+  return (
+    <div>
+      <h3>Level Mode</h3>
+      <button onClick={() => setLevelMode('stacked')}>Stacked</button>
+      <button onClick={() => setLevelMode('exploded')}>Exploded</button>
+      <button onClick={() => setLevelMode('solo')}>Solo</button>
+      
+      <h3>Wall Mode</h3>
+      <button onClick={() => setWallMode('up')}>Up</button>
+      <button onClick={() => setWallMode('cutaway')}>Cutaway</button>
+      <button onClick={() => setWallMode('down')}>Down</button>
+      
+      <h3>Visibility</h3>
+      <label>
+        <input
+          type="checkbox"
+          checked={showScans}
+          onChange={(e) => setShowScans(e.target.checked)}
+        />
+        Show Scans
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={showGuides}
+          onChange={(e) => setShowGuides(e.target.checked)}
+        />
+        Show Guides
+      </label>
+    </div>
+  )
+}
+```
+
+### Theme Switcher
+
+```tsx
+import { useViewer } from '@pascal-app/viewer'
+
+function ThemeToggle() {
+  const { theme, setTheme } = useViewer()
+  
+  return (
+    <button
+      onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+      style={{
+        padding: '10px 20px',
+        background: theme === 'light' ? '#333' : '#fff',
+        color: theme === 'light' ? '#fff' : '#333',
+      }}
+    >
+      {theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'}
+    </button>
+  )
+}
+```
+
+### Multi-Select Items
+
+```tsx
+import { useViewer } from '@pascal-app/viewer'
+import { useScene } from '@pascal-app/core'
+
+function ItemSelector() {
+  const { nodes } = useScene()
+  const { selection, setSelection } = useViewer()
+  
+  const items = Object.values(nodes).filter(
+    node => node?.type === 'item'
+  )
+  
+  const toggleItem = (itemId: string) => {
+    const isSelected = selection.selectedIds.includes(itemId)
+    
+    if (isSelected) {
+      setSelection({
+        selectedIds: selection.selectedIds.filter(id => id !== itemId)
+      })
+    } else {
+      setSelection({
+        selectedIds: [...selection.selectedIds, itemId]
+      })
+    }
+  }
+  
+  return (
+    <div>
+      {items.map(item => (
+        <label key={item.id}>
+          <input
+            type="checkbox"
+            checked={selection.selectedIds.includes(item.id)}
+            onChange={() => toggleItem(item.id)}
+          />
+          {item.name}
+        </label>
+      ))}
+    </div>
+  )
+}
+```
+
+## Related
+
+- [Viewer Component](/api/viewer/viewer-component) - Main 3D viewer component
+- [@pascal-app/core](/api/core/overview) - Core scene graph and node types

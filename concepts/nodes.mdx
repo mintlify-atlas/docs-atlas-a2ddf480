@@ -1,0 +1,337 @@
+---
+title: Nodes
+description: Understanding the node hierarchy, BaseNode structure, and type-safe node schemas
+---
+
+## Overview
+
+Nodes are the **data primitives** that describe the 3D scene in Pascal Editor. All nodes extend `BaseNode` and are stored in a flat dictionary structure with parent-child relationships defined via `parentId`.
+
+## BaseNode Structure
+
+All nodes in the scene extend the `BaseNode` schema defined with Zod:
+
+```typescript
+export const BaseNode = z.object({
+  object: z.literal('node').default('node'),
+  id: z.string(),              // Auto-generated with type prefix (e.g., "wall_abc123")
+  type: nodeType('node'),      // Discriminator for type-safe handling
+  name: z.string().optional(),
+  parentId: z.string().nullable().default(null),
+  visible: z.boolean().optional().default(true),
+  camera: CameraSchema.optional(),
+  metadata: z.json().optional().default({}),
+})
+```
+
+Location: `packages/core/src/schema/base.ts:21-30`
+
+### Core Properties
+
+<ParamField path="id" type="string" required>
+  Auto-generated unique identifier with type prefix (e.g., `wall_abc123`, `item_xyz789`)
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Node type discriminator used for type-safe handling (`'site'`, `'building'`, `'level'`, `'wall'`, etc.)
+</ParamField>
+
+<ParamField path="parentId" type="string | null" default="null">
+  Reference to parent node ID. Null for root nodes (typically Site nodes).
+</ParamField>
+
+<ParamField path="visible" type="boolean" default="true">
+  Controls whether the node is rendered in the 3D scene.
+</ParamField>
+
+<ParamField path="camera" type="Camera" optional>
+  Optional saved camera position for this node (used for viewpoint navigation).
+</ParamField>
+
+<ParamField path="metadata" type="JSON" default="{}">
+  Arbitrary metadata object. Use `{ isTransient: true }` to prevent persistence to IndexedDB.
+</ParamField>
+
+## Node Hierarchy
+
+Nodes form a tree structure representing the building hierarchy:
+
+```
+Site
+└── Building
+    └── Level
+        ├── Wall → Item (doors, windows)
+        ├── Slab
+        ├── Ceiling → Item (lights)
+        ├── Roof
+        ├── Zone
+        ├── Scan (3D reference)
+        └── Guide (2D reference)
+```
+
+<Note>
+While nodes form a logical tree, they are stored in a **flat dictionary** (`Record<id, Node>`), not a nested structure. Parent-child relationships are defined via `parentId` and `children` arrays.
+</Note>
+
+## Node Types
+
+The SDK provides type-safe node schemas using Zod's discriminated union:
+
+```typescript
+export const AnyNode = z.discriminatedUnion('type', [
+  SiteNode,
+  BuildingNode,
+  LevelNode,
+  WallNode,
+  ItemNode,
+  ZoneNode,
+  SlabNode,
+  CeilingNode,
+  RoofNode,
+  ScanNode,
+  GuideNode,
+  WindowNode,
+  DoorNode,
+])
+
+export type AnyNode = z.infer<typeof AnyNode>
+export type AnyNodeType = AnyNode['type']
+export type AnyNodeId = AnyNode['id']
+```
+
+Location: `packages/core/src/schema/types.ts:16-35`
+
+### Structural Nodes
+
+#### SiteNode
+
+Represents a site/property. Root node of the scene hierarchy.
+
+```typescript
+export const SiteNode = BaseNode.extend({
+  id: objectId('site'),
+  type: nodeType('site'),
+  polygon: PropertyLineData.optional().default({
+    type: 'polygon',
+    points: [
+      [-15, -15],
+      [15, -15],
+      [15, 15],
+      [-15, 15],
+    ],
+  }),
+  children: z
+    .array(z.discriminatedUnion('type', [BuildingNode, ItemNode]))
+    .default([BuildingNode.parse({})]),
+})
+```
+
+Location: `packages/core/src/schema/nodes/site.ts:21-39`
+
+#### BuildingNode
+
+Represents a building within a site.
+
+```typescript
+export const BuildingNode = BaseNode.extend({
+  id: objectId('building'),
+  type: nodeType('building'),
+  children: z.array(LevelNode.shape.id).default([]),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+})
+```
+
+Location: `packages/core/src/schema/nodes/building.ts:6-12`
+
+#### LevelNode
+
+Represents a floor level in a building.
+
+```typescript
+export const LevelNode = BaseNode.extend({
+  id: objectId('level'),
+  type: nodeType('level'),
+  children: z.array(
+    z.union([
+      WallNode.shape.id,
+      ZoneNode.shape.id,
+      SlabNode.shape.id,
+      CeilingNode.shape.id,
+      RoofNode.shape.id,
+      ScanNode.shape.id,
+      GuideNode.shape.id,
+    ])
+  ).default([]),
+  level: z.number().default(0),
+})
+```
+
+Location: `packages/core/src/schema/nodes/level.ts:12-18`
+
+### Building Elements
+
+#### WallNode
+
+Represents a wall defined by start and end points.
+
+```typescript
+export const WallNode = BaseNode.extend({
+  id: objectId('wall'),
+  type: nodeType('wall'),
+  children: z.array(ItemNode.shape.id).default([]),
+  thickness: z.number().optional(),
+  height: z.number().optional(),
+  start: z.tuple([z.number(), z.number()]),
+  end: z.tuple([z.number(), z.number()]),
+  frontSide: z.enum(['interior', 'exterior', 'unknown']).default('unknown'),
+  backSide: z.enum(['interior', 'exterior', 'unknown']).default('unknown'),
+})
+```
+
+<ParamField path="start" type="[number, number]" required>
+  Start point in level coordinate system (2D: x, z)
+</ParamField>
+
+<ParamField path="end" type="[number, number]" required>
+  End point in level coordinate system (2D: x, z)
+</ParamField>
+
+<ParamField path="thickness" type="number" default="0.1">
+  Wall thickness in meters
+</ParamField>
+
+<ParamField path="height" type="number" default="2.5">
+  Wall height in meters
+</ParamField>
+
+Location: `packages/core/src/schema/nodes/wall.ts:9-22`
+
+#### SlabNode
+
+Represents a floor slab defined by a polygon.
+
+```typescript
+export const SlabNode = BaseNode.extend({
+  id: objectId('slab'),
+  type: nodeType('slab'),
+  polygon: z.array(z.tuple([z.number(), z.number()])),
+  holes: z.array(z.array(z.tuple([z.number(), z.number()]))).default([]),
+  elevation: z.number().default(0.05),
+})
+```
+
+<ParamField path="polygon" type="Array<[number, number]>" required>
+  Array of [x, z] points defining the slab boundary
+</ParamField>
+
+<ParamField path="holes" type="Array<Array<[number, number]>>" default="[]">
+  Array of hole polygons (for openings in the slab)
+</ParamField>
+
+<ParamField path="elevation" type="number" default="0.05">
+  Elevation in meters (thickness of the slab)
+</ParamField>
+
+Location: `packages/core/src/schema/nodes/slab.ts:5-13`
+
+#### ItemNode
+
+Represents furniture, fixtures, or other 3D assets.
+
+```typescript
+export const ItemNode = BaseNode.extend({
+  id: objectId('item'),
+  type: nodeType('item'),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  scale: z.tuple([z.number(), z.number(), z.number()]).default([1, 1, 1]),
+  side: z.enum(['front', 'back']).optional(),
+  children: z.array(objectId('item')).default([]),
+
+  // Wall attachment properties
+  wallId: z.string().optional(),
+  wallT: z.number().optional(), // 0-1 parametric position along wall
+
+  asset: assetSchema,
+})
+```
+
+<ParamField path="asset" type="Asset" required>
+  Asset data including model source, dimensions, attachment behavior, and corrective transforms
+</ParamField>
+
+<ParamField path="wallId" type="string" optional>
+  Wall ID when asset is attached to a wall
+</ParamField>
+
+<ParamField path="wallT" type="number" optional>
+  Parametric position (0-1) along the wall when attached
+</ParamField>
+
+<ParamField path="scale" type="[number, number, number]" default="[1, 1, 1]">
+  Scale factor for the asset (applied to asset.dimensions)
+</ParamField>
+
+Location: `packages/core/src/schema/nodes/item.ts:28-42`
+
+## Flat Dictionary Storage
+
+Nodes are stored in a flat dictionary rather than a nested tree:
+
+```typescript
+type SceneState = {
+  // Flat dictionary of all nodes
+  nodes: Record<AnyNodeId, AnyNode>
+  
+  // Top-level nodes (typically Site nodes)
+  rootNodeIds: AnyNodeId[]
+  
+  // Nodes pending system updates
+  dirtyNodes: Set<AnyNodeId>
+}
+```
+
+Location: `packages/core/src/store/use-scene.ts:14-23`
+
+### Benefits of Flat Storage
+
+<CardGroup cols={2}>
+  <Card title="Fast Lookups" icon="magnifying-glass">
+    Direct access to any node by ID without tree traversal: `nodes[id]`
+  </Card>
+  
+  <Card title="Easy Updates" icon="pen">
+    Update nodes without cloning entire tree structure
+  </Card>
+  
+  <Card title="Simple Serialization" icon="file-export">
+    Easy to persist to IndexedDB or serialize to JSON
+  </Card>
+  
+  <Card title="Flexible Relationships" icon="diagram-project">
+    Supports multiple parent-child patterns (walls, surfaces, attachments)
+  </Card>
+</CardGroup>
+
+## ID Generation
+
+Node IDs are auto-generated with type prefixes using nanoid:
+
+```typescript
+const customId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 16)
+
+export const generateId = <T extends string>(prefix: T): `${T}_${string}` =>
+  `${prefix}_${customId()}` as `${T}_${string}`
+```
+
+Examples:
+- `site_a1b2c3d4e5f6g7h8`
+- `wall_x9y8z7w6v5u4t3s2`
+- `item_p0o9i8u7y6t5r4e3`
+
+Location: `packages/core/src/schema/base.ts:5-13`
+
+<Tip>
+The type prefix makes it easy to identify node types in logs and debugging without looking up the full node object.
+</Tip>

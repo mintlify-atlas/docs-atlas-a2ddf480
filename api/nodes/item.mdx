@@ -1,0 +1,510 @@
+---
+title: "ItemNode"
+description: "Node representing a 3D item/object with asset reference, position, and rotation"
+---
+
+## Overview
+
+The `ItemNode` represents a 3D object or item in the scene, such as furniture, fixtures, equipment, or decorative elements. Items reference 3D assets (GLB models) and can be positioned freely or attached to walls.
+
+**Key features**:
+- References 3D assets (GLB models)
+- Position, rotation, and scale transforms
+- Wall attachment support for doors, windows, etc.
+- Hierarchical item nesting (parent-child relationships)
+- Asset metadata (dimensions, attachment points, corrective transforms)
+
+## Type Signature
+
+```typescript
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+
+const assetSchema = z.object({
+  id: z.string(),
+  category: z.string(),
+  name: z.string(),
+  thumbnail: z.string(),
+  src: z.string(),
+  dimensions: z.tuple([z.number(), z.number(), z.number()]).default([1, 1, 1]),
+  attachTo: z.enum(['wall', 'wall-side', 'ceiling']).optional(),
+  tags: z.array(z.string()).optional(),
+  offset: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  scale: z.tuple([z.number(), z.number(), z.number()]).default([1, 1, 1]),
+  surface: z.object({ height: z.number() }).optional(),
+})
+
+const ItemNode = BaseNode.extend({
+  id: objectId('item'),
+  type: nodeType('item'),
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  scale: z.tuple([z.number(), z.number(), z.number()]).default([1, 1, 1]),
+  side: z.enum(['front', 'back']).optional(),
+  children: z.array(objectId('item')).default([]),
+  wallId: z.string().optional(),
+  wallT: z.number().optional(),
+  asset: assetSchema,
+})
+
+type ItemNode = z.infer<typeof ItemNode>
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/item.ts`
+
+## Fields
+
+### Inherited from BaseNode
+
+<ParamField path="id" type="string" required>
+  Unique item identifier.
+  
+  **Format**: `item_{randomString}`
+  
+  **Example**: `"item_a1b2c3d4e5f6g7h8"`
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Always set to `"item"`.
+  
+  **Default**: `"item"`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional name for the item.
+  
+  **Example**: `"Office Chair"`, `"Front Door"`
+</ParamField>
+
+<ParamField path="parentId" type="string | null" required>
+  Reference to the parent node's ID.
+  
+  **Examples**:
+  - `"level_abc123"` - Item placed in a level
+  - `"wall_xyz789"` - Item attached to a wall
+  - `"site_def456"` - Site-level item
+  - `"item_ghi789"` - Nested item (child of another item)
+  
+  **Default**: `null`
+</ParamField>
+
+<ParamField path="visible" type="boolean">
+  Controls item visibility.
+  
+  **Default**: `true`
+</ParamField>
+
+<ParamField path="camera" type="CameraSchema">
+  Optional camera viewpoint for the item.
+</ParamField>
+
+<ParamField path="metadata" type="any">
+  Custom metadata for the item.
+  
+  **Default**: `{}`
+</ParamField>
+
+### Item Transform Fields
+
+<ParamField path="position" type="[number, number, number]" required>
+  Position in the parent coordinate system.
+  
+  **Format**: `[x, y, z]` in meters
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Examples**:
+  - `[2.5, 0, 3.0]` - Free-standing item position
+  - `[0, 1.2, 0.1]` - Wall-mounted item position (relative to wall attachment point)
+  
+  For wall-attached items, the position is relative to the attachment point on the wall.
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" required>
+  Rotation in the parent coordinate system.
+  
+  **Format**: `[x, y, z]` in radians (Euler angles)
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Example**: `[0, Math.PI / 2, 0]` (90-degree rotation around Y axis)
+</ParamField>
+
+<ParamField path="scale" type="[number, number, number]" required>
+  Scale multiplier applied to the asset.
+  
+  **Format**: `[x, y, z]` scale factors
+  
+  **Default**: `[1, 1, 1]` (no scaling)
+  
+  **Examples**:
+  - `[1.5, 1.5, 1.5]` - 150% larger
+  - `[0.5, 0.5, 0.5]` - 50% smaller
+  - `[1, 2, 1]` - Stretched vertically
+  
+  The effective dimensions are `asset.dimensions * scale`. Use `getScaledDimensions()` for calculations.
+</ParamField>
+
+### Wall Attachment Fields
+
+<ParamField path="wallId" type="string">
+  ID of the wall this item is attached to.
+  
+  **Example**: `"wall_abc123"`
+  
+  Only used when `asset.attachTo` is `"wall"` or `"wall-side"`.
+</ParamField>
+
+<ParamField path="wallT" type="number">
+  Parametric position along the wall (0-1).
+  
+  **Range**: `0.0` to `1.0`
+  
+  **Examples**:
+  - `0.0` - Start of wall
+  - `0.5` - Center of wall
+  - `1.0` - End of wall
+  - `0.25` - Quarter way along wall
+  
+  Only used when `wallId` is specified.
+</ParamField>
+
+<ParamField path="side" type="'front' | 'back'">
+  Which side of the wall the item is attached to.
+  
+  **Values**:
+  - `"front"` - Front side of wall
+  - `"back"` - Back side of wall
+  
+  Only used for wall-attached items.
+</ParamField>
+
+### Item Hierarchy
+
+<ParamField path="children" type="Array<string>" required>
+  Array of child item IDs.
+  
+  **Default**: `[]`
+  
+  **Example**: `["item_chair1", "item_chair2", "item_vase"]`
+  
+  Allows creating hierarchical relationships between items (e.g., chairs around a table, objects on a shelf).
+</ParamField>
+
+### Asset Fields
+
+<ParamField path="asset" type="Asset" required>
+  Asset metadata and model reference.
+  
+  **Structure**: See Asset Schema below
+</ParamField>
+
+## Asset Schema
+
+The `asset` object contains metadata about the 3D model:
+
+<ParamField path="asset.id" type="string" required>
+  Unique asset identifier.
+  
+  **Example**: `"desk-modern-001"`
+</ParamField>
+
+<ParamField path="asset.category" type="string" required>
+  Asset category for organization.
+  
+  **Examples**: `"furniture"`, `"doors"`, `"windows"`, `"lighting"`, `"appliances"`
+</ParamField>
+
+<ParamField path="asset.name" type="string" required>
+  Display name for the asset.
+  
+  **Example**: `"Modern Desk"`, `"Standard Door"`
+</ParamField>
+
+<ParamField path="asset.thumbnail" type="string" required>
+  URL to thumbnail image.
+  
+  **Example**: `"/thumbnails/desk-modern-001.jpg"`
+</ParamField>
+
+<ParamField path="asset.src" type="string" required>
+  URL to the 3D model file (GLB).
+  
+  **Example**: `"/models/furniture/desk-modern-001.glb"`
+</ParamField>
+
+<ParamField path="asset.dimensions" type="[number, number, number]" required>
+  Base dimensions of the asset.
+  
+  **Format**: `[width, height, depth]` in meters
+  
+  **Default**: `[1, 1, 1]`
+  
+  **Example**: `[1.2, 0.75, 0.6]` (desk: 1.2m wide, 0.75m tall, 0.6m deep)
+</ParamField>
+
+<ParamField path="asset.attachTo" type="'wall' | 'wall-side' | 'ceiling'">
+  Where the item can be attached.
+  
+  **Values**:
+  - `"wall"` - Centered on wall surface (doors, windows)
+  - `"wall-side"` - On front or back side of wall (light switches, outlets)
+  - `"ceiling"` - Ceiling-mounted (lights, fans)
+  
+  If undefined, the item is free-standing.
+</ParamField>
+
+<ParamField path="asset.tags" type="Array<string>">
+  Tags for searching and filtering.
+  
+  **Example**: `["modern", "wood", "office"]`
+</ParamField>
+
+<ParamField path="asset.offset" type="[number, number, number]" required>
+  Corrective position offset for the GLB model.
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Purpose**: Normalize model origin (e.g., if model origin is not at the base)
+</ParamField>
+
+<ParamField path="asset.rotation" type="[number, number, number]" required>
+  Corrective rotation for the GLB model.
+  
+  **Default**: `[0, 0, 0]`
+  
+  **Purpose**: Normalize model orientation (e.g., if model faces wrong direction)
+</ParamField>
+
+<ParamField path="asset.scale" type="[number, number, number]" required>
+  Corrective scale for the GLB model.
+  
+  **Default**: `[1, 1, 1]`
+  
+  **Purpose**: Normalize model to correct dimensions
+</ParamField>
+
+<ParamField path="asset.surface" type="{ height: number }">
+  Surface height where objects can rest.
+  
+  **Example**: `{ height: 0.75 }` (table surface at 75cm)
+  
+  **Purpose**: Allows automatic placement of items on surfaces (e.g., vase on table)
+  
+  If undefined, items cannot be placed on this item's surface.
+</ParamField>
+
+## Example
+
+```typescript
+import { ItemNode } from '@pascal/core/schema/nodes/item'
+
+const desk: ItemNode = {
+  object: 'node',
+  id: 'item_desk_001',
+  type: 'item',
+  name: 'Office Desk',
+  parentId: 'level_ground_floor',
+  visible: true,
+  position: [2.5, 0, 3.0],
+  rotation: [0, Math.PI / 4, 0],
+  scale: [1, 1, 1],
+  children: ['item_chair_001', 'item_lamp_001'],
+  asset: {
+    id: 'desk-modern-001',
+    category: 'furniture',
+    name: 'Modern Desk',
+    thumbnail: '/thumbnails/desk.jpg',
+    src: '/models/desk.glb',
+    dimensions: [1.2, 0.75, 0.6],
+    tags: ['modern', 'wood', 'office'],
+    offset: [0, 0, 0],
+    rotation: [0, 0, 0],
+    scale: [1, 1, 1],
+    surface: { height: 0.75 },
+  },
+  metadata: {
+    material: 'oak',
+    price: 599,
+  },
+}
+```
+
+## Usage
+
+### Creating a Free-Standing Item
+
+```typescript
+import { ItemNode } from '@pascal/core/schema/nodes/item'
+
+const chair = ItemNode.parse({
+  name: 'Office Chair',
+  position: [2.5, 0, 2.0],
+  rotation: [0, 0, 0],
+  asset: {
+    id: 'chair-office-001',
+    category: 'furniture',
+    name: 'Office Chair',
+    thumbnail: '/thumbnails/chair.jpg',
+    src: '/models/chair.glb',
+    dimensions: [0.6, 0.9, 0.6],
+  },
+})
+```
+
+### Creating a Wall-Mounted Item (Door)
+
+```typescript
+const door = ItemNode.parse({
+  name: 'Front Door',
+  wallId: 'wall_abc123',
+  wallT: 0.5, // Center of wall
+  side: 'front',
+  asset: {
+    id: 'door-standard-001',
+    category: 'doors',
+    name: 'Standard Door',
+    thumbnail: '/thumbnails/door.jpg',
+    src: '/models/door.glb',
+    dimensions: [0.9, 2.1, 0.1],
+    attachTo: 'wall',
+  },
+})
+```
+
+### Creating a Wall-Side Item (Light Switch)
+
+```typescript
+const lightSwitch = ItemNode.parse({
+  name: 'Light Switch',
+  wallId: 'wall_xyz789',
+  wallT: 0.2,
+  side: 'front',
+  position: [0, 1.2, 0.05], // 1.2m height, 5cm from wall
+  asset: {
+    id: 'switch-standard',
+    category: 'electrical',
+    name: 'Light Switch',
+    thumbnail: '/thumbnails/switch.jpg',
+    src: '/models/switch.glb',
+    dimensions: [0.08, 0.08, 0.02],
+    attachTo: 'wall-side',
+  },
+})
+```
+
+### Creating Items with Children
+
+```typescript
+// Table with items on surface
+const table = ItemNode.parse({
+  name: 'Dining Table',
+  position: [4, 0, 4],
+  asset: {
+    id: 'table-dining',
+    category: 'furniture',
+    name: 'Dining Table',
+    thumbnail: '/thumbnails/table.jpg',
+    src: '/models/table.glb',
+    dimensions: [1.8, 0.75, 0.9],
+    surface: { height: 0.75 },
+  },
+})
+
+const vase = ItemNode.parse({
+  name: 'Vase',
+  parentId: table.id,
+  position: [0, 0.75, 0], // On table surface
+  asset: {
+    id: 'vase-ceramic',
+    category: 'decor',
+    name: 'Ceramic Vase',
+    thumbnail: '/thumbnails/vase.jpg',
+    src: '/models/vase.glb',
+    dimensions: [0.15, 0.25, 0.15],
+  },
+})
+
+// Update table's children
+table.children = [vase.id]
+```
+
+### Scaling Items
+
+```typescript
+import { getScaledDimensions } from '@pascal/core/schema/nodes/item'
+
+const sofa = ItemNode.parse({
+  name: 'Large Sofa',
+  position: [0, 0, 0],
+  scale: [1.5, 1.5, 1.5], // 150% larger
+  asset: {
+    id: 'sofa-modern',
+    category: 'furniture',
+    name: 'Modern Sofa',
+    thumbnail: '/thumbnails/sofa.jpg',
+    src: '/models/sofa.glb',
+    dimensions: [2.0, 0.8, 0.9], // Base dimensions
+  },
+})
+
+// Get actual dimensions after scaling
+const [width, height, depth] = getScaledDimensions(sofa)
+// Result: [3.0, 1.2, 1.35]
+```
+
+## Helper Functions
+
+### getScaledDimensions()
+
+Returns the effective world-space dimensions after applying scale:
+
+```typescript
+function getScaledDimensions(item: ItemNode): [number, number, number]
+```
+
+Source: `/home/daytona/workspace/source/packages/core/src/schema/nodes/item.ts:62-66`
+
+**Example**:
+```typescript
+import { getScaledDimensions } from '@pascal/core/schema/nodes/item'
+
+const item = ItemNode.parse({
+  scale: [2, 1, 1],
+  asset: {
+    /* ... */
+    dimensions: [1, 2, 3],
+  },
+})
+
+const dims = getScaledDimensions(item) // [2, 2, 3]
+```
+
+## Transform Hierarchy
+
+Item transforms are applied in this order:
+
+1. **Asset corrective transforms** (asset.offset, asset.rotation, asset.scale)
+2. **Item scale** (item.scale)
+3. **Item rotation** (item.rotation)
+4. **Item position** (item.position)
+5. **Parent transforms** (if nested)
+
+## Use Cases
+
+- **Furniture placement** in rooms
+- **Doors and windows** on walls
+- **Light fixtures** on ceilings and walls
+- **Electrical fixtures** (switches, outlets)
+- **Decorative objects** and accessories
+- **Equipment and appliances**
+- **Site elements** (vehicles, signage)
+- **Hierarchical assemblies** (table with chairs, desk with lamp)
+
+## Related
+
+- [BaseNode](/api/nodes/base) - Inherited base fields
+- [WallNode](/api/nodes/wall) - Walls that items can attach to
+- [LevelNode](/api/nodes/level) - Levels containing items
+- [SiteNode](/api/nodes/site) - Sites containing site-level items

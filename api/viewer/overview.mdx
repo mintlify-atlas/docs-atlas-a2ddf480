@@ -1,0 +1,120 @@
+---
+title: "@pascal-app/viewer"
+description: "3D rendering components for the Pascal building editor"
+---
+
+## Overview
+
+The `@pascal-app/viewer` package provides React components and utilities for rendering 3D building models in the Pascal editor. It's built on top of React Three Fiber and Three.js WebGPU, offering high-performance visualization with advanced rendering features like SSGI (Screen Space Global Illumination), temporal anti-aliasing, and dynamic post-processing.
+
+## Installation
+
+```bash
+npm install @pascal-app/viewer
+```
+
+## Peer Dependencies
+
+This package requires the following peer dependencies:
+
+```json
+{
+  "@pascal-app/core": "^0.1.4",
+  "@react-three/drei": "^10",
+  "@react-three/fiber": "^9",
+  "react": "^18 || ^19",
+  "three": "^0.183"
+}
+```
+
+Make sure these are installed in your project:
+
+```bash
+npm install @pascal-app/core @react-three/drei @react-three/fiber react three
+```
+
+## Exports
+
+The package exports the following components and utilities:
+
+### Components
+
+- `Viewer` - Main 3D viewer component with built-in rendering pipeline
+
+### Hooks
+
+- `useViewer` - Zustand store hook for managing viewer state (selection, camera mode, theme, etc.)
+
+### Utilities
+
+- `ASSETS_CDN_URL` - Base URL for asset CDN (`https://editor.pascal.app`)
+- `resolveAssetUrl(url)` - Async function to resolve asset URLs (handles `http://`, `https://`, `asset://`, and relative paths)
+- `resolveCdnUrl(url)` - Synchronous CDN URL resolver (for non-IndexedDB assets)
+- `snapLevelsToTruePositions()` - Utility to snap level positions for rendering/export
+
+## Quick Start
+
+```tsx
+import { Viewer, useViewer } from '@pascal-app/viewer'
+import { useScene } from '@pascal-app/core'
+
+function App() {
+  const { setSelection } = useViewer()
+  const scene = useScene()
+
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer>
+        {/* Additional 3D content can be added here */}
+      </Viewer>
+    </div>
+  )
+}
+```
+
+## Key Features
+
+### WebGPU Rendering
+
+The viewer uses Three.js WebGPU renderer for cutting-edge graphics performance:
+
+- Hardware-accelerated ray tracing capabilities
+- Advanced post-processing effects
+- Efficient GPU compute shaders
+
+### Advanced Post-Processing
+
+- **SSGI** - Screen Space Global Illumination with ambient occlusion
+- **TRAA** - Temporal Reprojection Anti-Aliasing for smooth edges
+- **Outline rendering** - Selection and hover state visualization
+- **Dynamic backgrounds** - Smooth theme transitions
+
+### Built-in Systems
+
+The viewer automatically integrates with Pascal's core systems:
+
+- Level management (stacked, exploded, solo modes)
+- Wall rendering with cutaway modes
+- Item, door, window, ceiling, roof, and slab rendering
+- Scan and guide visualization
+- Zone rendering
+
+## Architecture
+
+The viewer is designed as a declarative React component that manages its own rendering pipeline. It uses:
+
+- **React Three Fiber** - React renderer for Three.js
+- **Zustand** - State management with persistence
+- **WebGPU** - Modern graphics API for high performance
+- **BVH** - Bounding Volume Hierarchy for optimized raycasting
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Viewer Component" icon="cube" href="/api/viewer/viewer-component">
+    Learn about the main Viewer component and its props
+  </Card>
+  <Card title="useViewer Hook" icon="code" href="/api/viewer/viewer-store">
+    Explore the viewer state management hook
+  </Card>
+</CardGroup>

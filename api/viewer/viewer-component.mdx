@@ -1,0 +1,256 @@
+---
+title: "Viewer Component"
+description: "Main 3D rendering component with WebGPU pipeline"
+---
+
+## Overview
+
+The `Viewer` component is the main entry point for rendering 3D building models in Pascal. It sets up a complete WebGPU rendering pipeline with advanced post-processing, camera controls, lighting, and integration with the Pascal scene graph.
+
+## Import
+
+```tsx
+import { Viewer } from '@pascal-app/viewer'
+```
+
+## Props
+
+<ParamField path="children" type="React.ReactNode" optional>
+  Additional React Three Fiber components to render inside the Canvas. Use this to add custom 3D objects, effects, or controls to the scene.
+</ParamField>
+
+<ParamField path="selectionManager" type="'default' | 'custom'" default="'default'" optional>
+  Controls whether to use the built-in selection manager or provide a custom one.
+  
+  - `'default'` - Uses the built-in `SelectionManager` component that handles click and hover interactions
+  - `'custom'` - Disables the default selection manager, allowing you to implement custom selection logic
+</ParamField>
+
+## Basic Usage
+
+```tsx
+import { Viewer } from '@pascal-app/viewer'
+
+function App() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer />
+    </div>
+  )
+}
+```
+
+## Custom Selection Manager
+
+If you need custom selection behavior, you can disable the default selection manager:
+
+```tsx
+import { Viewer } from '@pascal-app/viewer'
+import { CustomSelectionManager } from './custom-selection'
+
+function App() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer selectionManager="custom">
+        <CustomSelectionManager />
+      </Viewer>
+    </div>
+  )
+}
+```
+
+## Adding Custom 3D Content
+
+You can add custom Three.js objects or React Three Fiber components as children:
+
+```tsx
+import { Viewer } from '@pascal-app/viewer'
+import { Box, Sphere } from '@react-three/drei'
+
+function App() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer>
+        <Box position={[0, 2, 0]} />
+        <Sphere position={[5, 1, 5]} />
+      </Viewer>
+    </div>
+  )
+}
+```
+
+## Rendering Pipeline
+
+The Viewer component sets up a complete rendering pipeline:
+
+### 1. WebGPU Renderer
+
+- **Tone Mapping**: ACES Filmic tone mapping
+- **Exposure**: 0.9
+- **Shadows**: PCF shadow maps enabled
+- **DPR**: 1.0 to 1.5 (device pixel ratio)
+
+```tsx
+// Internal configuration (reference only)
+gl={(props) => {
+  const renderer = new THREE.WebGPURenderer(props)
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 0.9
+  return renderer
+}}
+```
+
+### 2. Default Camera
+
+- **Type**: Perspective camera (switchable to orthographic via `useViewer`)
+- **Initial Position**: `[50, 50, 50]`
+- **Field of View**: 50 degrees
+- **Controls**: Orbit controls with auto-rotation support
+
+### 3. Lighting System
+
+The viewer includes a sophisticated lighting setup:
+
+- Directional lights for sun simulation
+- Ambient lighting
+- Shadow casting enabled
+- Dynamic theme-based adjustments
+
+### 4. Post-Processing Effects
+
+Advanced post-processing pipeline includes:
+
+- **SSGI** (Screen Space Global Illumination) - Realistic ambient occlusion and indirect lighting
+- **TRAA** (Temporal Reprojection Anti-Aliasing) - Smooth anti-aliased edges
+- **Outline Rendering** - Visual feedback for selection and hover states
+- **MRT** (Multiple Render Targets) - Efficient multi-pass rendering
+
+Post-processing parameters can be adjusted in `src/components/viewer/post-processing.tsx:28`.
+
+## Built-in Systems
+
+The Viewer automatically includes all Pascal rendering systems:
+
+### Core Building Systems
+
+- `WallSystem` - Wall rendering with cutaway modes
+- `CeilingSystem` - Ceiling rendering
+- `DoorSystem` - Door rendering
+- `WindowSystem` - Window rendering
+- `RoofSystem` - Roof rendering
+- `SlabSystem` - Floor slab rendering
+- `ItemSystem` - Furniture and items
+
+### Additional Systems
+
+- `LevelSystem` - Multi-level management (stacked/exploded/solo modes)
+- `ZoneSystem` - Zone boundary rendering
+- `GuideSystem` - Construction guides and measurements
+- `ScanSystem` - Point cloud and scan data
+- `WallCutout` - Automatic cutouts for doors/windows
+
+### Visual Enhancements
+
+- `GroundOccluder` - Ground plane occlusion
+- `Lights` - Dynamic lighting system
+- `PostProcessing` - Advanced effects pipeline
+- `SelectionManager` - Click and hover interaction (when enabled)
+- `Bvh` - Bounding Volume Hierarchy for optimized raycasting
+
+## Theme Support
+
+The viewer supports light and dark themes, controlled via the `useViewer` store:
+
+```tsx
+import { Viewer, useViewer } from '@pascal-app/viewer'
+
+function ThemeToggle() {
+  const { theme, setTheme } = useViewer()
+  
+  return (
+    <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+      Toggle Theme
+    </button>
+  )
+}
+
+function App() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer />
+      <ThemeToggle />
+    </div>
+  )
+}
+```
+
+The background color smoothly transitions between:
+- **Light mode**: `#ffffff` (white)
+- **Dark mode**: `#1f2433` (dark blue-gray)
+
+## Performance Optimization
+
+The Viewer is optimized for performance:
+
+1. **BVH Acceleration** - All scene objects are wrapped in a BVH for fast raycasting
+2. **Frustum Culling** - Automatic culling of off-screen objects
+3. **Instanced Rendering** - Efficient rendering of repeated geometries
+4. **Texture Optimization** - Compressed textures for faster loading
+5. **Level of Detail** - Automatic LOD based on camera distance (system-dependent)
+
+## Complete Example
+
+```tsx
+import { Viewer, useViewer } from '@pascal-app/viewer'
+import { useScene } from '@pascal-app/core'
+import { useEffect } from 'react'
+
+function SceneController() {
+  const { setSelection, setCameraMode, setLevelMode } = useViewer()
+  const { nodes } = useScene()
+
+  useEffect(() => {
+    // Find first building and select it
+    const firstBuilding = Object.values(nodes).find(
+      node => node?.type === 'building'
+    )
+    
+    if (firstBuilding) {
+      setSelection({ buildingId: firstBuilding.id })
+    }
+  }, [nodes, setSelection])
+
+  return (
+    <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 100 }}>
+      <button onClick={() => setCameraMode('perspective')}>
+        Perspective
+      </button>
+      <button onClick={() => setCameraMode('orthographic')}>
+        Orthographic
+      </button>
+      <button onClick={() => setLevelMode('stacked')}>
+        Stacked
+      </button>
+      <button onClick={() => setLevelMode('exploded')}>
+        Exploded
+      </button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+      <Viewer />
+      <SceneController />
+    </div>
+  )
+}
+
+export default App
+```
+
+## Related
+
+- [useViewer Hook](/api/viewer/viewer-store) - State management for viewer
+- [@pascal-app/core](/api/core/overview) - Core scene graph and node types

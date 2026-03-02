@@ -1,0 +1,316 @@
+---
+title: 'ItemSystem'
+description: 'React component that positions items on walls, ceilings, and floors with automatic elevation'
+---
+
+## Overview
+
+The `ItemSystem` is a React component that processes dirty item nodes and calculates their position based on attachment type:
+
+- **Wall-side items**: Offset by wall thickness with correct side orientation
+- **Floor items**: Elevated by slab height using spatial grid
+- **Ceiling items**: Positioned at ceiling height
+- **Surface-placed items**: Positioned on other items via hierarchy
+
+The system runs in a `useFrame` hook at priority `2`, ensuring items update after slabs but before walls.
+
+## Location
+
+```
+~/workspace/source/packages/core/src/systems/item/item-system.tsx
+```
+
+## How It Works
+
+### Processing Pipeline
+
+<Steps>
+<Step title="Monitor dirty nodes">
+The system watches the `dirtyNodes` set for nodes with `type === 'item'`.
+</Step>
+
+<Step title="Determine attachment type">
+Check the item's `asset.attachTo` property:
+- `'wall-side'`: Wall-attached items (art, TVs, switches)
+- `'wall'`: Wall-embedded items (windows, doors)
+- `'ceiling'`: Ceiling-attached items (lights, fans)
+- `undefined`: Floor or surface-placed items
+</Step>
+
+<Step title="Calculate position">
+Based on attachment type:
+- **Wall-side**: Offset Z by `(wallThickness / 2) * side`
+- **Floor**: Query spatial grid for slab elevation
+- **Surface**: Let React Three Fiber hierarchy handle it
+</Step>
+
+<Step title="Clear dirty flag">
+Once the mesh is positioned, the node is removed from `dirtyNodes`.
+</Step>
+</Steps>
+
+## Props
+
+The `ItemSystem` component has no props. It reads state from the Zustand store:
+
+<ParamField path="dirtyNodes" type="Set<AnyNodeId>">
+  Set of node IDs that need position updates
+</ParamField>
+
+<ParamField path="nodes" type="Record<AnyNodeId, AnyNode>">
+  All nodes in the scene graph
+</ParamField>
+
+## Dependencies
+
+### ItemNode Schema
+
+The system processes `ItemNode` objects with these properties:
+
+<ParamField path="id" type="string" required>
+  Unique item identifier
+</ParamField>
+
+<ParamField path="position" type="[number, number, number]" default="[0, 0, 0]">
+  Position in level (or parent) coordinates `[x, y, z]`
+</ParamField>
+
+<ParamField path="rotation" type="[number, number, number]" default="[0, 0, 0]">
+  Euler rotation in radians `[x, y, z]`
+</ParamField>
+
+<ParamField path="scale" type="[number, number, number]" default="[1, 1, 1]">
+  Scale multiplier `[x, y, z]`
+</ParamField>
+
+<ParamField path="side" type="'front' | 'back'">
+  Which side of the wall the item is on (for `attachTo: 'wall-side'`)
+</ParamField>
+
+<ParamField path="parentId" type="string">
+  Parent node ID (wall, ceiling, level, or another item)
+</ParamField>
+
+<ParamField path="asset" type="Asset" required>
+  Asset definition containing dimensions, model URL, and attachment type
+</ParamField>
+
+### Asset Schema
+
+<ParamField path="asset.attachTo" type="'wall' | 'wall-side' | 'ceiling' | undefined">
+  How the item attaches to the scene:
+  - `'wall-side'`: On wall surface (art, TVs)
+  - `'wall'`: Embedded in wall (windows, doors)
+  - `'ceiling'`: Hangs from ceiling (lights, fans)
+  - `undefined`: Sits on floor or surface
+</ParamField>
+
+<ParamField path="asset.dimensions" type="[number, number, number]">
+  Base dimensions in meters `[width, height, depth]`
+</ParamField>
+
+<ParamField path="asset.surface" type="{ height: number }">
+  Optional surface definition for items that support placement on top
+</ParamField>
+
+### External Systems
+
+- **Scene Registry** (`sceneRegistry.nodes`): Maps node IDs to THREE.js meshes
+- **Spatial Grid Manager** (`spatialGridManager`): Provides slab elevation for floor items
+
+## Positioning Logic
+
+### Wall-Side Items
+
+Items attached to wall surfaces are offset perpendicular to the wall:
+
+```typescript
+if (item.asset.attachTo === 'wall-side') {
+  const parentWall = nodes[item.parentId] as WallNode
+  const wallThickness = parentWall.thickness ?? 0.1
+  const side = item.side === 'front' ? 1 : -1
+  mesh.position.z = (wallThickness / 2) * side
+}
+```
+
+- **Front side**: `z = +wallThickness/2` (outside wall)
+- **Back side**: `z = -wallThickness/2` (inside wall)
+
+### Floor Items
+
+Items placed on the floor query the spatial grid for slab elevation:
+
+```typescript
+const levelId = resolveLevelId(item, nodes)
+const slabElevation = spatialGridManager.getSlabElevationForItem(
+  levelId,
+  item.position,
+  getScaledDimensions(item),
+  item.rotation,
+)
+mesh.position.y = slabElevation + item.position[1]
+```
+
+The spatial grid uses the item's full footprint to determine which slab it sits on.
+
+### Surface-Placed Items
+
+Items placed on surfaces (tables, desks) inherit position from their parent:
+
+```typescript
+const parentNode = nodes[item.parentId]
+if (parentNode?.type === 'item') {
+  // React Three Fiber hierarchy handles positioning
+  // No manual position calculation needed
+}
+```
+
+## Slab Elevation Calculation
+
+The spatial grid manager calculates slab elevation by:
+
+1. **Transforming item footprint** to world coordinates
+2. **Querying spatial grid cells** that overlap the footprint
+3. **Finding highest slab** that the item sits on
+4. **Returning elevation** (or 0 if no slab found)
+
+This ensures items:
+- Sit on raised platforms
+- Don't fall through floors
+- Rest on the correct slab when overlapping multiple floors
+
+## Usage Example
+
+```tsx
+import { ItemSystem } from '@pascal/core/systems/item/item-system'
+import { useScene } from '@pascal/core/store/use-scene'
+
+function placeChairOnFloor() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const chair = {
+    id: 'item_chair_1',
+    type: 'item',
+    parentId: 'level_1',
+    position: [2, 0, 3],
+    rotation: [0, Math.PI / 4, 0],
+    scale: [1, 1, 1],
+    asset: {
+      id: 'chair_modern',
+      name: 'Modern Chair',
+      src: '/models/chair.glb',
+      dimensions: [0.5, 0.8, 0.5],
+      // No attachTo = floor placement
+    },
+  }
+  
+  addNode(chair)
+  markDirty(chair.id)
+}
+
+function hangArtOnWall() {
+  const { addNode, markDirty } = useScene.getState()
+  
+  const art = {
+    id: 'item_art_1',
+    type: 'item',
+    parentId: 'wall_1',
+    position: [2.5, 1.5, 0], // Along wall, height, (z offset handled by system)
+    rotation: [0, 0, 0],
+    scale: [1, 1, 1],
+    side: 'front',
+    asset: {
+      id: 'art_frame',
+      name: 'Picture Frame',
+      src: '/models/frame.glb',
+      dimensions: [0.8, 0.6, 0.05],
+      attachTo: 'wall-side',
+    },
+  }
+  
+  addNode(art)
+  markDirty(art.id)
+}
+
+function Viewer() {
+  return (
+    <Canvas>
+      {/* Other scene content */}
+      <ItemSystem />
+    </Canvas>
+  )
+}
+```
+
+## Coordinate Systems
+
+### Wall-Attached Items
+
+Wall-local coordinates:
+- **X-axis**: Along wall length
+- **Y-axis**: Height (up)
+- **Z-axis**: Perpendicular to wall (thickness direction)
+
+### Floor Items
+
+Level coordinates:
+- **X-axis**: Horizontal (left-right)
+- **Y-axis**: Vertical (height)
+- **Z-axis**: Horizontal (forward-back)
+
+### Ceiling Items
+
+Ceiling-local coordinates:
+- **X-axis**: Horizontal (left-right)
+- **Y-axis**: Vertical (down from ceiling)
+- **Z-axis**: Horizontal (forward-back)
+
+## Surface Placement
+
+Items with `asset.surface` can have other items placed on them:
+
+```typescript
+const desk = {
+  asset: {
+    id: 'desk',
+    dimensions: [1.2, 0.75, 0.6],
+    surface: {
+      height: 0.75, // Top of desk
+    },
+  },
+}
+
+const monitor = {
+  parentId: desk.id,
+  position: [0, 0.75, 0], // On top of desk
+}
+```
+
+The parent-child hierarchy in React Three Fiber automatically handles the transform.
+
+## Performance Notes
+
+- Only updates dirty items (not all items every frame)
+- Runs at priority `2` (after slabs update their geometry)
+- Uses cached spatial grid queries for slab elevation
+- No geometry generation (just position updates)
+
+## Integration with Other Systems
+
+### Wall System
+
+Walls create cutouts for wall-attached items with a `'cutout'` mesh using CSG subtraction.
+
+### Spatial Grid
+
+The spatial grid tracks slab boundaries and elevations to correctly position floor items, even on complex multi-level floors.
+
+### Scene Registry
+
+All item meshes are registered in `sceneRegistry.nodes` for quick lookup by ID.
+
+## Related
+
+- [WallSystem](/api/systems/wall-system) - Creates cutouts for wall items
+- [SlabSystem](/api/systems/slab-system) - Provides floor elevation data
+- [CeilingSystem](/api/systems/ceiling-system) - Provides ceiling height for attached items

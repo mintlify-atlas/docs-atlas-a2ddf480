@@ -1,0 +1,266 @@
+---
+title: Installation
+description: Install Pascal Editor SDK packages and dependencies
+---
+
+Pascal Editor is distributed as two npm packages that work together to provide a complete 3D building editor framework.
+
+## Install packages
+
+<Steps>
+  <Step title="Install Pascal Editor packages">
+    Install both `@pascal-app/core` and `@pascal-app/viewer`:
+
+    <CodeGroup>
+      ```bash npm
+      npm install @pascal-app/core @pascal-app/viewer
+      ```
+
+      ```bash yarn
+      yarn add @pascal-app/core @pascal-app/viewer
+      ```
+
+      ```bash pnpm
+      pnpm add @pascal-app/core @pascal-app/viewer
+      ```
+
+      ```bash bun
+      bun add @pascal-app/core @pascal-app/viewer
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Install peer dependencies">
+    Pascal Editor requires React, Three.js, and React Three Fiber:
+
+    <CodeGroup>
+      ```bash npm
+      npm install react three@^0.183 @react-three/fiber@^9 @react-three/drei@^10
+      ```
+
+      ```bash yarn
+      yarn add react three@^0.183 @react-three/fiber@^9 @react-three/drei@^10
+      ```
+
+      ```bash pnpm
+      pnpm add react three@^0.183 @react-three/fiber@^9 @react-three/drei@^10
+      ```
+
+      ```bash bun
+      bun add react three@^0.183 @react-three/fiber@^9 @react-three/drei@^10
+      ```
+    </CodeGroup>
+
+    <Note>
+      Pascal Editor works with React 18 or 19. Three.js version 0.183+ is required for WebGPU support.
+    </Note>
+  </Step>
+
+  <Step title="Verify installation">
+    Create a test file to verify the installation:
+
+    ```typescript test.ts
+    import { useScene, WallNode } from '@pascal-app/core'
+    import { Viewer, useViewer } from '@pascal-app/viewer'
+
+    // Create a wall node
+    const wall = WallNode.parse({
+      start: [0, 0],
+      end: [5, 0],
+      thickness: 0.15,
+      height: 3.0
+    })
+
+    console.log('Pascal Editor installed successfully!')
+    console.log('Wall ID:', wall.id)
+    ```
+
+    Run the test:
+
+    ```bash
+    node --loader ts-node/esm test.ts
+    ```
+
+    You should see output confirming the installation and a generated wall ID like `wall_abc123`.
+  </Step>
+</Steps>
+
+## Package overview
+
+### @pascal-app/core
+
+The core package provides:
+
+- **Node schemas** - Zod-validated types for all building elements (Wall, Slab, Level, etc.)
+- **State management** - `useScene` Zustand store with IndexedDB persistence and undo/redo
+- **Geometry systems** - `WallSystem`, `SlabSystem`, `ItemSystem`, etc.
+- **Scene registry** - Fast ID-to-Object3D lookup via `useRegistry` hook
+- **Event bus** - Typed event emitter for inter-component communication
+- **Spatial queries** - Collision detection and placement validation
+
+**Exports:**
+
+```typescript
+import {
+  // Store
+  useScene,
+  
+  // Schemas
+  WallNode,
+  BuildingNode,
+  LevelNode,
+  SlabNode,
+  ItemNode,
+  ZoneNode,
+  
+  // Systems
+  WallSystem,
+  SlabSystem,
+  ItemSystem,
+  CeilingSystem,
+  
+  // Hooks
+  useRegistry,
+  sceneRegistry,
+  spatialGridManager,
+  
+  // Events
+  emitter,
+  type WallEvent,
+  type ItemEvent
+} from '@pascal-app/core'
+```
+
+### @pascal-app/viewer
+
+The viewer package provides:
+
+- **Viewer component** - Canvas with WebGPU renderer, lights, camera, and post-processing
+- **Node renderers** - React components that create Three.js objects for each node type
+- **Viewer systems** - `LevelSystem` for level visibility, `ScanSystem`, `GuideSystem`
+- **Selection manager** - Default click/hover handling with hierarchical navigation
+- **Viewer state** - `useViewer` Zustand store for camera mode, theme, level display mode
+
+**Exports:**
+
+```typescript
+import {
+  // Main component
+  Viewer,
+  
+  // Store
+  useViewer,
+  
+  // Utils
+  resolveAssetUrl,
+  snapLevelsToTruePositions
+} from '@pascal-app/viewer'
+```
+
+## TypeScript configuration
+
+<Info>
+  Pascal Editor is written in TypeScript and includes complete type definitions. No additional setup is required.
+</Info>
+
+If you're using TypeScript in your project, ensure your `tsconfig.json` includes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "strict": true
+  }
+}
+```
+
+## Framework integration
+
+### Next.js
+
+Pascal Editor works with Next.js 13+ App Router. Mark client components with `'use client'`:
+
+```tsx app/editor/page.tsx
+'use client'
+
+import { Viewer } from '@pascal-app/viewer'
+
+export default function EditorPage() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer />
+    </div>
+  )
+}
+```
+
+### Vite
+
+No special configuration required. Just import and use:
+
+```tsx src/App.tsx
+import { Viewer } from '@pascal-app/viewer'
+
+function App() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <Viewer />
+    </div>
+  )
+}
+
+export default App
+```
+
+### Create React App
+
+Pascal Editor works with CRA out of the box:
+
+```tsx src/App.tsx
+import { Viewer } from '@pascal-app/viewer'
+import './App.css'
+
+function App() {
+  return (
+    <div className="App">
+      <Viewer />
+    </div>
+  )
+}
+
+export default App
+```
+
+<Warning>
+  Make sure your container element has explicit width and height. The Viewer component will fill its parent container.
+</Warning>
+
+## Browser support
+
+Pascal Editor uses WebGPU for rendering, which is supported in:
+
+- Chrome/Edge 113+
+- Safari 17.4+ (macOS 14.4+)
+- Firefox 127+ (behind flag)
+
+<Note>
+  For browsers without WebGPU support, consider using the WebGL fallback renderer (not included in current version).
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first 3D scene
+  </Card>
+  
+  <Card title="Core concepts" icon="book" href="/concepts/architecture">
+    Learn the fundamentals
+  </Card>
+</CardGroup>

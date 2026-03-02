@@ -1,0 +1,147 @@
+---
+title: Introduction
+description: Build professional 3D architectural editors with React Three Fiber and WebGPU
+---
+
+Pascal Editor is a TypeScript SDK for building 3D architectural editors with React Three Fiber and WebGPU. It provides a complete framework for creating interactive building design applications with real-time rendering, CSG operations, and state management.
+
+## What you can build
+
+Pascal Editor powers applications for:
+
+- Architectural design and space planning
+- Building information modeling (BIM) viewers
+- Interior design and furniture placement
+- Real estate visualization tools
+- Construction planning applications
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="WebGPU rendering" icon="cube">
+    Hardware-accelerated 3D graphics using Three.js WebGPU renderer with real-time shadows and post-processing
+  </Card>
+  
+  <Card title="Node-based scene graph" icon="diagram-project">
+    Hierarchical node system (Site → Building → Level → Walls/Slabs/Zones) stored as a flat dictionary for optimal performance
+  </Card>
+  
+  <Card title="CSG operations" icon="object-union">
+    Constructive solid geometry using three-bvh-csg for automatic door/window cutouts and complex geometry
+  </Card>
+  
+  <Card title="Zustand state management" icon="database">
+    Reactive state with automatic persistence to IndexedDB and undo/redo via Zundo (50-step history)
+  </Card>
+  
+  <Card title="Event bus" icon="bolt">
+    Typed event system for inter-component communication (wall:click, item:enter, zone:context-menu)
+  </Card>
+  
+  <Card title="Spatial queries" icon="grid">
+    Fast collision detection and placement validation using spatial grid manager
+  </Card>
+</CardGroup>
+
+## Why Pascal Editor?
+
+**Production-ready architecture**
+
+Pascal Editor separates concerns across three packages:
+
+- `@pascal-app/core` - Schema definitions, state management, and geometry systems
+- `@pascal-app/viewer` - 3D rendering with sensible defaults
+- Your application - UI components, tools, and custom behaviors
+
+This separation makes it easy to build custom editors while leveraging battle-tested rendering and state management.
+
+**Reactive by default**
+
+The dirty node system ensures optimal performance. When you update a wall thickness, only that wall's geometry regenerates:
+
+```typescript
+useScene.getState().updateNode(wallId, { thickness: 0.2 })
+// → wallId marked dirty
+// → WallSystem regenerates geometry next frame
+// → wallId cleared from dirty set
+```
+
+**Type-safe with Zod**
+
+All nodes are validated using Zod schemas, giving you runtime safety and TypeScript autocomplete:
+
+```typescript
+const wall = WallNode.parse({
+  start: [0, 0],
+  end: [5, 0],
+  thickness: 0.15,
+  height: 3.0
+})
+```
+
+## Architecture overview
+
+### Node hierarchy
+
+Nodes are the data primitives that describe your 3D scene:
+
+```
+Site
+└── Building
+    └── Level
+        ├── Wall → Items (doors, windows)
+        ├── Slab
+        ├── Ceiling → Items (lights)
+        ├── Roof
+        ├── Zone
+        ├── Scan (3D reference)
+        └── Guide (2D reference)
+```
+
+All nodes extend `BaseNode` with an id, type, parentId, and visibility flag. Nodes are stored in a flat dictionary, not a nested tree, with relationships defined via `parentId` and `children` arrays.
+
+### Systems
+
+Systems are React components that run in the render loop to update geometry. They process dirty nodes marked by the store:
+
+- `WallSystem` - Generates wall geometry with mitering and CSG cutouts
+- `SlabSystem` - Generates floor geometry from polygons
+- `ItemSystem` - Positions items on walls, ceilings, or floors
+- `LevelSystem` - Handles level visibility and vertical positioning
+
+### Scene registry
+
+The registry maps node IDs to Three.js objects for fast lookup:
+
+```typescript
+sceneRegistry.nodes.get(wallId) // → Mesh
+sceneRegistry.byType.wall // → Set of all wall IDs
+```
+
+Renderers register their refs using the `useRegistry` hook, allowing systems to access 3D objects directly without traversing the scene graph.
+
+## Technology stack
+
+- React 18/19 with TypeScript
+- Three.js (WebGPU renderer)
+- React Three Fiber + Drei
+- Zustand (state management)
+- Zod (schema validation)
+- Zundo (undo/redo)
+- three-bvh-csg (Boolean geometry)
+
+## Next steps
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first 3D scene in 5 minutes
+  </Card>
+  
+  <Card title="Core concepts" icon="book" href="/concepts/architecture">
+    Learn about nodes, systems, and state management
+  </Card>
+  
+  <Card title="API reference" icon="code" href="/api/core/overview">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>

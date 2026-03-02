@@ -1,0 +1,388 @@
+---
+title: Scene State
+description: Understanding Zustand-based scene state management, CRUD operations, and middleware
+---
+
+## Overview
+
+The scene state is managed by a **Zustand store** in `@pascal-app/core` that provides a centralized, reactive state container for all nodes in the 3D scene.
+
+## Store Structure
+
+```typescript
+type SceneState = {
+  // 1. The Data: A flat dictionary of all nodes
+  nodes: Record<AnyNodeId, AnyNode>
+
+  // 2. The Root: Which nodes are at the top level?
+  rootNodeIds: AnyNodeId[]
+
+  // 3. The "Dirty" Set: For the systems
+  dirtyNodes: Set<AnyNodeId>
+
+  // Actions
+  loadScene: () => void
+  clearScene: () => void
+  setScene: (nodes: Record<AnyNodeId, AnyNode>, rootNodeIds: AnyNodeId[]) => void
+
+  markDirty: (id: AnyNodeId) => void
+  clearDirty: (id: AnyNodeId) => void
+
+  createNode: (node: AnyNode, parentId?: AnyNodeId) => void
+  createNodes: (ops: { node: AnyNode; parentId?: AnyNodeId }[]) => void
+
+  updateNode: (id: AnyNodeId, data: Partial<AnyNode>) => void
+  updateNodes: (updates: { id: AnyNodeId; data: Partial<AnyNode> }[]) => void
+
+  deleteNode: (id: AnyNodeId) => void
+  deleteNodes: (ids: AnyNodeId[]) => void
+}
+```
+
+Location: `packages/core/src/store/use-scene.ts:14-40`
+
+## CRUD Operations
+
+### Create Node
+
+Create a single node and optionally attach it to a parent:
+
+```typescript
+import useScene from '@pascal-app/core/store/use-scene'
+import { WallNode } from '@pascal-app/core/schema'
+
+// Create a wall node
+const wall = WallNode.parse({
+  start: [0, 0],
+  end: [5, 0],
+  thickness: 0.15,
+  height: 2.7,
+})
+
+useScene.getState().createNode(wall, levelId)
+```
+
+The node is automatically:
+1. Added to the `nodes` dictionary
+2. Added to parent's `children` array (if `parentId` provided)
+3. Marked as dirty for system processing
+
+Location: `packages/core/src/store/actions/node-actions.ts:5-52`
+
+### Batch Create Nodes
+
+Create multiple nodes efficiently:
+
+```typescript
+const operations = [
+  { node: wall1, parentId: levelId },
+  { node: wall2, parentId: levelId },
+  { node: door, parentId: wall1.id },
+]
+
+useScene.getState().createNodes(operations)
+```
+
+<Tip>
+Batch operations are more efficient than individual creates as they only trigger one state update and re-render.
+</Tip>
+
+### Update Node
+
+Update properties of an existing node:
+
+```typescript
+// Update wall thickness
+useScene.getState().updateNode(wallId, {
+  thickness: 0.2,
+  height: 3.0,
+})
+
+// Move an item
+useScene.getState().updateNode(itemId, {
+  position: [2, 0, 3],
+  rotation: [0, Math.PI / 2, 0],
+})
+```
+
+The node is automatically:
+1. Updated in the `nodes` dictionary
+2. Marked as dirty for system processing
+3. Parent is also marked dirty (to update spatial relationships)
+
+Location: `packages/core/src/store/actions/node-actions.ts:54-109`
+
+### Reparenting
+
+Change a node's parent by updating its `parentId`:
+
+```typescript
+// Move door from wall1 to wall2
+useScene.getState().updateNode(doorId, {
+  parentId: wall2.id,
+})
+```
+
+The update action handles:
+1. Removing node from old parent's `children` array
+2. Adding node to new parent's `children` array
+3. Marking both old and new parents as dirty
+
+### Delete Node
+
+Delete a node and all its descendants:
+
+```typescript
+// Delete a wall (also deletes all doors/windows attached to it)
+useScene.getState().deleteNode(wallId)
+```
+
+The deletion:
+1. Recursively deletes all children
+2. Removes node from parent's `children` array
+3. Removes node from `nodes` dictionary
+4. Removes node from `rootNodeIds` (if applicable)
+5. Triggers full scene re-validation (some deletions like slabs affect elevations)
+
+Location: `packages/core/src/store/actions/node-actions.ts:111-161`
+
+<Warning>
+Deletion is **recursive** - deleting a wall will also delete all doors, windows, and items attached to it.
+</Warning>
+
+## Dirty Nodes
+
+The `dirtyNodes` set tracks which nodes need geometry updates. Systems check this set each frame and only recompute geometry for dirty nodes.
+
+### Automatic Marking
+
+Nodes are automatically marked dirty when:
+- Created with `createNode` / `createNodes`
+- Updated with `updateNode` / `updateNodes`
+- Their parent is modified
+- Scene is loaded or imported
+
+```typescript
+// Automatic: node is marked dirty
+useScene.getState().updateNode(wallId, { thickness: 0.2 })
+// → wallId added to dirtyNodes
+// → WallSystem regenerates geometry next frame
+// → wallId removed from dirtyNodes
+```
+
+Location: `packages/core/src/store/use-scene.ts:126-132`
+
+### Manual Marking
+
+You can manually mark nodes dirty when needed:
+
+```typescript
+// Mark a specific node dirty
+useScene.getState().markDirty(wallId)
+
+// Clear dirty flag
+useScene.getState().clearDirty(wallId)
+```
+
+<Note>
+Systems are responsible for clearing the dirty flag after processing. If a node's mesh isn't registered yet, the system will keep it dirty for the next frame.
+</Note>
+
+## Middleware
+
+The scene store uses two Zustand middleware layers:
+
+### Persistence Middleware
+
+Automatically saves scene to **IndexedDB** for local persistence:
+
+```typescript
+persist(
+  // ... store definition
+  {
+    name: 'editor-storage',
+    version: 1,
+    partialize: (state) => ({
+      nodes: Object.fromEntries(
+        Object.entries(state.nodes).filter(([_, node]) => {
+          const meta = node.metadata
+          const isTransient = isObject(meta) && 'isTransient' in meta && meta.isTransient === true
+          return !isTransient
+        }),
+      ),
+      rootNodeIds: state.rootNodeIds,
+    }),
+  }
+)
+```
+
+Location: `packages/core/src/store/use-scene.ts:155-172`
+
+#### Transient Nodes
+
+Nodes marked with `metadata: { isTransient: true }` are **not persisted** to IndexedDB:
+
+```typescript
+const previewWall = WallNode.parse({
+  start: [0, 0],
+  end: [5, 0],
+  metadata: { isTransient: true }, // Won't be saved
+})
+
+useScene.getState().createNode(previewWall, levelId)
+```
+
+<Tip>
+Use transient nodes for preview geometry, guides, or temporary visual elements that shouldn't be persisted.
+</Tip>
+
+### Temporal Middleware (Undo/Redo)
+
+Provides **undo/redo** functionality using Zundo:
+
+```typescript
+temporal(
+  // ... store definition
+  {
+    partialize: (state) => {
+      const { nodes, rootNodeIds } = state
+      return { nodes, rootNodeIds } // Only track nodes and rootNodeIds in history
+    },
+    limit: 50, // Limit to last 50 actions
+  }
+)
+```
+
+Location: `packages/core/src/store/use-scene.ts:147-153`
+
+#### Using Undo/Redo
+
+```typescript
+import useScene from '@pascal-app/core/store/use-scene'
+
+// Undo last action
+useScene.temporal.getState().undo()
+
+// Redo
+useScene.temporal.getState().redo()
+
+// Check if undo/redo available
+const canUndo = useScene.temporal((state) => state.pastStates.length > 0)
+const canRedo = useScene.temporal((state) => state.futureStates.length > 0)
+```
+
+#### Dirty Node Re-validation
+
+After undo/redo, **all nodes are marked dirty** to trigger re-validation:
+
+```typescript
+useScene.temporal.subscribe((state) => {
+  const didUndo = currentFutureLength > prevFutureLength
+  const didRedo = currentPastLength > prevPastLength && currentFutureLength < prevFutureLength
+
+  if (didUndo || didRedo) {
+    requestAnimationFrame(() => {
+      const currentNodes = useScene.getState().nodes
+      // Trigger full scene re-validation
+      Object.values(currentNodes).forEach((node) => {
+        useScene.getState().markDirty(node.id)
+      })
+    })
+  }
+})
+```
+
+Location: `packages/core/src/store/use-scene.ts:237-257`
+
+## Loading and Clearing Scenes
+
+### Load Default Scene
+
+Create a default scene hierarchy (Site → Building → Level):
+
+```typescript
+useScene.getState().loadScene()
+```
+
+Location: `packages/core/src/store/use-scene.ts:90-124`
+
+### Set Scene from External Data
+
+Load a scene from external source (file, database, etc.):
+
+```typescript
+const sceneData = await fetch('/api/project/123').then(r => r.json())
+
+useScene.getState().setScene(
+  sceneData.nodes,
+  sceneData.rootNodeIds
+)
+```
+
+This:
+1. Replaces current scene
+2. Applies backward compatibility patches (e.g., adding `scale` to old ItemNodes)
+3. Marks all nodes dirty for re-validation
+
+Location: `packages/core/src/store/use-scene.ts:70-88`
+
+### Clear Scene
+
+Reset to empty scene and reload default:
+
+```typescript
+useScene.getState().clearScene()
+```
+
+Location: `packages/core/src/store/use-scene.ts:61-68`
+
+## Usage Patterns
+
+### In React Components
+
+```typescript
+import useScene from '@pascal-app/core/store/use-scene'
+
+function WallProperties({ wallId }: { wallId: string }) {
+  // Subscribe to specific node
+  const wall = useScene((state) => state.nodes[wallId])
+  
+  if (!wall || wall.type !== 'wall') return null
+  
+  const handleThicknessChange = (value: number) => {
+    useScene.getState().updateNode(wallId, { thickness: value })
+  }
+  
+  return (
+    <div>
+      <label>Thickness: {wall.thickness}</label>
+      <input
+        type="number"
+        value={wall.thickness ?? 0.1}
+        onChange={(e) => handleThicknessChange(Number(e.target.value))}
+      />
+    </div>
+  )
+}
+```
+
+### Outside React (Systems, Utilities)
+
+```typescript
+import useScene from '@pascal-app/core/store/use-scene'
+
+function getWallsOnLevel(levelId: string) {
+  const { nodes } = useScene.getState()
+  const level = nodes[levelId]
+  
+  if (!level || level.type !== 'level') return []
+  
+  return level.children
+    .map(id => nodes[id])
+    .filter(node => node?.type === 'wall')
+}
+```
+
+<Note>
+Use `useScene.getState()` to access state outside React components. This doesn't create a subscription and won't cause re-renders.
+</Note>
